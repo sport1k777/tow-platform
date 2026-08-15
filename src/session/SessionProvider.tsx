@@ -36,6 +36,7 @@ type SessionContextValue = {
   signOut: () => Promise<void>;
   switchToDriverMode: () => boolean;
   switchToCustomerMode: () => void;
+  getAccessToken: () => string | null;
 };
 
 const guestSession: Session = {
@@ -167,6 +168,8 @@ export function SessionProvider({ children }: PropsWithChildren) {
     setSession((current) => ({ ...current, activeMode: 'customer' }));
   }, []);
 
+  const getAccessToken = useCallback(() => tokens.accessToken, [tokens.accessToken]);
+
   const value = useMemo(
     () => ({
       session,
@@ -175,8 +178,17 @@ export function SessionProvider({ children }: PropsWithChildren) {
       signOut,
       switchToDriverMode,
       switchToCustomerMode,
+      getAccessToken,
     }),
-    [session, requestOtp, verifyOtp, signOut, switchToDriverMode, switchToCustomerMode],
+    [
+      session,
+      requestOtp,
+      verifyOtp,
+      signOut,
+      switchToDriverMode,
+      switchToCustomerMode,
+      getAccessToken,
+    ],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

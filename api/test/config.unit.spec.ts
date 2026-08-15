@@ -31,6 +31,7 @@ describe('loadEnv', () => {
     expect(env.OTP_LENGTH).toBe(6);
     expect(env.OTP_MAX_ATTEMPTS).toBe(5);
     expect(env.SMS_PROVIDER).toBe('dev');
+    expect(env.GEO_PROVIDER).toBe('dev');
   });
 
   it('rejects a short JWT_SECRET', () => {
@@ -43,15 +44,14 @@ describe('loadEnv', () => {
     ).toThrow(/JWT_SECRET/);
   });
 
-  it('rejects SMS_PROVIDER=dev in production', () => {
+  it('rejects SMS_PROVIDER=dev and GEO_PROVIDER=dev in production', () => {
     expect(() =>
       loadEnv({
         NODE_ENV: 'production',
         DATABASE_URL: 'postgresql://tow:tow@localhost:5433/tow_platform',
         JWT_SECRET: 'change-me-in-development-min-32-chars',
-        SMS_PROVIDER: 'dev',
       }),
-    ).toThrow(/SMS_PROVIDER=dev cannot be used in production/);
+    ).toThrow(/SMS_PROVIDER=dev and GEO_PROVIDER=dev cannot be used in production/);
   });
 
   it('rejects a missing DATABASE_URL', () => {

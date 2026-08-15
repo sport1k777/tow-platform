@@ -20,6 +20,10 @@ const envSchema = z.object({
   OTP_REQUEST_WINDOW_SECONDS: z.coerce.number().int().positive().default(600),
   OTP_REQUEST_MAX: z.coerce.number().int().positive().default(3),
   SMS_PROVIDER: z.enum(['dev']).default('dev'),
+  GEO_PROVIDER: z.enum(['dev', 'osm']).default('dev'),
+  NOMINATIM_URL: z.string().url().default('https://nominatim.openstreetmap.org'),
+  OSRM_URL: z.string().url().default('https://router.project-osrm.org'),
+  GEO_USER_AGENT: z.string().min(1).default('tow-platform/0.1 (phase-4-geo)'),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -33,8 +37,15 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
     throw new Error(`Invalid environment configuration: ${details}`);
   }
 
+  const blockedInProduction: string[] = [];
   if (parsed.data.NODE_ENV === 'production' && parsed.data.SMS_PROVIDER === 'dev') {
-    throw new Error('SMS_PROVIDER=dev cannot be used in production');
+    blockedInProduction.push('SMS_PROVIDER=dev');
+  }
+  if (parsed.data.NODE_ENV === 'production' && parsed.data.GEO_PROVIDER === 'dev') {
+    blockedInProduction.push('GEO_PROVIDER=dev');
+  }
+  if (blockedInProduction.length > 0) {
+    throw new Error(`${blockedInProduction.join(' and ')} cannot be used in production`);
   }
 
   return parsed.data;

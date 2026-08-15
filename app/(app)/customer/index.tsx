@@ -34,6 +34,12 @@ export default function CustomerHomeScreen() {
                 service.urgent && styles.urgentTile,
                 pressed && styles.pressed,
               ]}
+              onPress={() => {
+                router.push({
+                  pathname: './map',
+                  params: { service: service.key },
+                });
+              }}
             >
               <Text style={[styles.tileTitle, service.urgent && styles.urgentTitle]}>
                 {service.title}

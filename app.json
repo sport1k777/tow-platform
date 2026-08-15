@@ -10,7 +10,16 @@
     "plugins": [
       "expo-router",
       "expo-status-bar",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Дозвольте визначити місце подачі заявки.",
+          "isIosBackgroundLocationEnabled": false,
+          "isAndroidBackgroundLocationEnabled": false
+        }
+      ],
+      "react-native-maps"
     ],
     "experiments": {
       "typedRoutes": true
