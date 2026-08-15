@@ -4,7 +4,12 @@ export const copy = {
   authSubtitle:
     'Евакуатор, переїзд, вантаж або техдопомога. Замовлення за кілька кроків.',
   continueAsCustomer: 'Продовжити як клієнт',
-  continueAsDriver: 'Увійти з профілем водія',
+  phonePlaceholder: '+380',
+  otpPlaceholder: 'Код',
+  requestCode: 'Отримати код',
+  verifyCode: 'Увійти',
+  resendCode: 'Надіслати код ще раз',
+  authError: 'Не вдалося увійти',
   customerHomeTitle: 'Яка послуга потрібна?',
   customerHomeSubtitle: 'Евакуатор — найшвидший шлях, якщо авто вже не їде.',
   serviceTow: 'Евакуатор',

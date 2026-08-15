@@ -59,8 +59,7 @@ export default function DriverHomeScreen() {
           accessibilityRole="button"
           style={({ pressed }) => [styles.signOut, pressed && styles.pressed]}
           onPress={() => {
-            signOut();
-            router.replace('/(auth)');
+            void signOut().then(() => router.replace('/(auth)'));
           }}
         >
           <Text style={styles.signOutLabel}>{copy.signOut}</Text>

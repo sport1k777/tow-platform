@@ -1,5 +1,6 @@
 import { router } from 'expo-router';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { copy } from '@/copy/uk';
@@ -7,7 +8,41 @@ import { useSession } from '@/session';
 import { colors } from '@/theme';
 
 export default function AuthScreen() {
-  const { signInAsCustomer, signInAsDriverCapable } = useSession();
+  const { requestOtp, verifyOtp } = useSession();
+  const [phone, setPhone] = useState('');
+  const [code, setCode] = useState('');
+  const [codeSent, setCodeSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function onRequestCode() {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await requestOtp(phone);
+      setCodeSent(true);
+      if (result.devCode) {
+        setCode(result.devCode);
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : copy.authError);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onVerify() {
+    setBusy(true);
+    setError(null);
+    try {
+      await verifyOtp(phone, code);
+      router.replace('/customer');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : copy.authError);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -16,27 +51,53 @@ export default function AuthScreen() {
         <Text style={styles.title}>{copy.authTitle}</Text>
         <Text style={styles.subtitle}>{copy.authSubtitle}</Text>
 
-        <Pressable
-          accessibilityRole="button"
-          style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
-          onPress={() => {
-            signInAsCustomer();
-            router.replace('/customer');
-          }}
-        >
-          <Text style={styles.primaryLabel}>{copy.continueAsCustomer}</Text>
-        </Pressable>
+        <TextInput
+          accessibilityLabel={copy.phonePlaceholder}
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="phone-pad"
+          placeholder={copy.phonePlaceholder}
+          placeholderTextColor={colors.muted}
+          style={styles.input}
+          value={phone}
+          onChangeText={setPhone}
+        />
+
+        {codeSent ? (
+          <TextInput
+            accessibilityLabel={copy.otpPlaceholder}
+            keyboardType="number-pad"
+            placeholder={copy.otpPlaceholder}
+            placeholderTextColor={colors.muted}
+            style={styles.input}
+            value={code}
+            onChangeText={setCode}
+          />
+        ) : null}
+
+        {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <Pressable
           accessibilityRole="button"
-          style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
-          onPress={() => {
-            signInAsDriverCapable();
-            router.replace('/driver');
-          }}
+          disabled={busy}
+          style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
+          onPress={codeSent ? onVerify : onRequestCode}
         >
-          <Text style={styles.secondaryLabel}>{copy.continueAsDriver}</Text>
+          <Text style={styles.primaryLabel}>
+            {codeSent ? copy.verifyCode : copy.requestCode}
+          </Text>
         </Pressable>
+
+        {codeSent ? (
+          <Pressable
+            accessibilityRole="button"
+            disabled={busy}
+            style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
+            onPress={onRequestCode}
+          >
+            <Text style={styles.secondaryLabel}>{copy.resendCode}</Text>
+          </Pressable>
+        ) : null}
       </View>
     </SafeAreaView>
   );
@@ -72,6 +133,22 @@ const styles = StyleSheet.create({
     fontSize: 17,
     lineHeight: 24,
     marginBottom: 36,
+  },
+  input: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    color: colors.text,
+    fontSize: 17,
+    marginBottom: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+  error: {
+    color: colors.accent,
+    fontSize: 15,
+    marginBottom: 12,
   },
   primaryButton: {
     backgroundColor: colors.accent,

@@ -15,6 +15,10 @@ export default function RootLayout() {
 function RootNavigator() {
   const { session } = useSession();
 
+  if (session.isLoading) {
+    return null;
+  }
+
   return (
     <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
       <Stack.Protected guard={session.isAuthenticated}>

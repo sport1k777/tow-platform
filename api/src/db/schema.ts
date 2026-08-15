@@ -1,5 +1,6 @@
 import {
   index,
+  integer,
   pgEnum,
   pgTable,
   primaryKey,
@@ -51,9 +52,29 @@ export const refreshTokens = pgTable(
   ],
 );
 
+export const otpChallenges = pgTable(
+  'otp_challenges',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    phone: text('phone').notNull(),
+    codeHash: text('code_hash').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    attemptCount: integer('attempt_count').notNull().default(0),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index('otp_challenges_phone_created_idx').on(table.phone, table.createdAt),
+    index('otp_challenges_expires_idx').on(table.expiresAt),
+  ],
+);
+
 export const schema = {
   users,
   userRoles,
   refreshTokens,
   userRoleEnum,
+  otpChallenges,
 };
