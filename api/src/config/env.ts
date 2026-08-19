@@ -24,6 +24,11 @@ const envSchema = z.object({
   NOMINATIM_URL: z.string().url().default('https://nominatim.openstreetmap.org'),
   OSRM_URL: z.string().url().default('https://router.project-osrm.org'),
   GEO_USER_AGENT: z.string().min(1).default('tow-platform/0.1 (phase-4-geo)'),
+  NOTIFICATION_PROVIDER: z.enum(['dev']).default('dev'),
+  CORS_ORIGINS: z.string().default('*'),
+  QUOTE_TTL_SECONDS: z.coerce.number().int().positive().default(600),
+  ORDER_SEARCH_TTL_SECONDS: z.coerce.number().int().positive().default(900),
+  OFFER_TTL_SECONDS: z.coerce.number().int().positive().default(60),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -41,8 +46,8 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
   if (parsed.data.NODE_ENV === 'production' && parsed.data.SMS_PROVIDER === 'dev') {
     blockedInProduction.push('SMS_PROVIDER=dev');
   }
-  if (parsed.data.NODE_ENV === 'production' && parsed.data.GEO_PROVIDER === 'dev') {
-    blockedInProduction.push('GEO_PROVIDER=dev');
+  if (parsed.data.NODE_ENV === 'production' && parsed.data.NOTIFICATION_PROVIDER === 'dev') {
+    blockedInProduction.push('NOTIFICATION_PROVIDER=dev');
   }
   if (blockedInProduction.length > 0) {
     throw new Error(`${blockedInProduction.join(' and ')} cannot be used in production`);

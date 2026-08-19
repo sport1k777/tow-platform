@@ -15,6 +15,20 @@
       "when": 1755223600000,
       "tag": "0001_otp_challenges",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1755230000000,
+      "tag": "0002_orders_quotes_pricing",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1755500000000,
+      "tag": "0003_mvp_profiles_lifecycle",
+      "breakpoints": true
     }
   ]
 }

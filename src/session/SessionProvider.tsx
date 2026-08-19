@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type PropsWithChildren,
 } from 'react';
@@ -16,6 +17,8 @@ import {
   verifyOtp as verifyOtpApi,
   type MeResponse,
 } from '@/api/auth';
+import { ApiError } from '@/api/client';
+import { copy } from '@/copy/uk';
 
 import { clearTokens, readTokens, saveTokens } from './tokenStore';
 
@@ -25,8 +28,10 @@ export type Session = {
   isLoading: boolean;
   isAuthenticated: boolean;
   canUseDriverMode: boolean;
+  canUseAdminMode: boolean;
   activeMode: AppMode;
   phone: string | null;
+  displayName: string | null;
 };
 
 type SessionContextValue = {
@@ -37,14 +42,18 @@ type SessionContextValue = {
   switchToDriverMode: () => boolean;
   switchToCustomerMode: () => void;
   getAccessToken: () => string | null;
+  authed: <T>(fn: (accessToken: string) => Promise<T>) => Promise<T>;
+  refreshProfile: () => Promise<void>;
 };
 
 const guestSession: Session = {
   isLoading: true,
   isAuthenticated: false,
   canUseDriverMode: false,
+  canUseAdminMode: false,
   activeMode: 'customer',
   phone: null,
+  displayName: null,
 };
 
 const SessionContext = createContext<SessionContextValue | null>(null);
@@ -54,8 +63,10 @@ function sessionFromMe(me: MeResponse, activeMode: AppMode): Session {
     isLoading: false,
     isAuthenticated: true,
     canUseDriverMode: me.canUseDriverMode,
+    canUseAdminMode: Boolean(me.canUseAdminMode),
     activeMode: me.canUseDriverMode ? activeMode : 'customer',
     phone: me.phone,
+    displayName: me.displayName ?? null,
   };
 }
 
@@ -65,60 +76,77 @@ export function SessionProvider({ children }: PropsWithChildren) {
     accessToken: string | null;
     refreshToken: string | null;
   }>({ accessToken: null, refreshToken: null });
+  const tokensRef = useRef(tokens);
+  const refreshInFlight = useRef<Promise<string | null> | null>(null);
+
+  const writeTokens = useCallback(
+    (next: { accessToken: string | null; refreshToken: string | null }) => {
+      tokensRef.current = next;
+      setTokens(next);
+    },
+    [],
+  );
 
   const applyTokens = useCallback(async (accessToken: string, refreshToken: string) => {
     await saveTokens(accessToken, refreshToken);
-    setTokens({ accessToken, refreshToken });
+    writeTokens({ accessToken, refreshToken });
     const me = await fetchMe(accessToken);
     setSession(sessionFromMe(me, 'customer'));
-  }, []);
+  }, [writeTokens]);
 
   useEffect(() => {
     let cancelled = false;
 
     async function restore() {
-      const stored = await readTokens();
-      if (!stored.accessToken && !stored.refreshToken) {
-        if (!cancelled) {
-          setSession({ ...guestSession, isLoading: false });
-        }
-        return;
-      }
-
       try {
-        if (stored.accessToken) {
-          const me = await fetchMe(stored.accessToken);
+        const stored = await readTokens();
+        if (!stored.accessToken && !stored.refreshToken) {
           if (!cancelled) {
-            setTokens(stored);
-            setSession(sessionFromMe(me, 'customer'));
+            setSession({ ...guestSession, isLoading: false });
           }
           return;
         }
-      } catch {
-        // try refresh below
-      }
 
-      try {
-        if (!stored.refreshToken) {
-          throw new Error('No refresh token');
+        try {
+          if (stored.accessToken) {
+            const me = await fetchMe(stored.accessToken);
+            if (!cancelled) {
+              writeTokens(stored);
+              setSession(sessionFromMe(me, 'customer'));
+            }
+            return;
+          }
+        } catch {
+          // try refresh below
         }
-        const rotated = await refreshSession(stored.refreshToken);
-        if (cancelled) {
-          return;
-        }
-        await saveTokens(rotated.accessToken, rotated.refreshToken);
-        const me = await fetchMe(rotated.accessToken);
-        if (!cancelled) {
-          setTokens({
-            accessToken: rotated.accessToken,
-            refreshToken: rotated.refreshToken,
-          });
-          setSession(sessionFromMe(me, 'customer'));
+
+        try {
+          if (!stored.refreshToken) {
+            throw new Error('No refresh token');
+          }
+          const rotated = await refreshSession(stored.refreshToken);
+          if (cancelled) {
+            return;
+          }
+          await saveTokens(rotated.accessToken, rotated.refreshToken);
+          const me = await fetchMe(rotated.accessToken);
+          if (!cancelled) {
+            writeTokens({
+              accessToken: rotated.accessToken,
+              refreshToken: rotated.refreshToken,
+            });
+            setSession(sessionFromMe(me, 'customer'));
+          }
+        } catch {
+          await clearTokens();
+          if (!cancelled) {
+            writeTokens({ accessToken: null, refreshToken: null });
+            setSession({ ...guestSession, isLoading: false });
+          }
         }
       } catch {
-        await clearTokens();
         if (!cancelled) {
-          setTokens({ accessToken: null, refreshToken: null });
+          writeTokens({ accessToken: null, refreshToken: null });
           setSession({ ...guestSession, isLoading: false });
         }
       }
@@ -128,7 +156,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [writeTokens]);
 
   const requestOtp = useCallback(async (phone: string) => {
     const result = await requestOtpApi(phone);
@@ -143,18 +171,82 @@ export function SessionProvider({ children }: PropsWithChildren) {
     [applyTokens],
   );
 
+  const getAccessToken = useCallback(() => tokens.accessToken, [tokens.accessToken]);
+
   const signOut = useCallback(async () => {
-    if (tokens.accessToken && tokens.refreshToken) {
+    const current = tokensRef.current;
+    if (current.accessToken && current.refreshToken) {
       try {
-        await logoutRequest(tokens.accessToken, tokens.refreshToken);
+        await logoutRequest(current.accessToken, current.refreshToken);
       } catch {
         // still clear local session
       }
     }
     await clearTokens();
-    setTokens({ accessToken: null, refreshToken: null });
+    writeTokens({ accessToken: null, refreshToken: null });
     setSession({ ...guestSession, isLoading: false });
-  }, [tokens]);
+  }, [writeTokens]);
+
+  const refreshAccessToken = useCallback(async (): Promise<string | null> => {
+    if (refreshInFlight.current) {
+      return refreshInFlight.current;
+    }
+
+    refreshInFlight.current = (async () => {
+      const refreshToken = tokensRef.current.refreshToken;
+      if (!refreshToken) {
+        await signOut();
+        return null;
+      }
+      try {
+        const rotated = await refreshSession(refreshToken);
+        await saveTokens(rotated.accessToken, rotated.refreshToken);
+        writeTokens({
+          accessToken: rotated.accessToken,
+          refreshToken: rotated.refreshToken,
+        });
+        return rotated.accessToken;
+      } catch {
+        await signOut();
+        return null;
+      } finally {
+        refreshInFlight.current = null;
+      }
+    })();
+
+    return refreshInFlight.current;
+  }, [signOut, writeTokens]);
+
+  const authed = useCallback(
+    async <T,>(fn: (accessToken: string) => Promise<T>): Promise<T> => {
+      const token = tokensRef.current.accessToken;
+      if (!token) {
+        throw new ApiError(copy.sessionExpired, 401);
+      }
+      try {
+        return await fn(token);
+      } catch (error) {
+        if (!(error instanceof ApiError) || error.status !== 401) {
+          throw error;
+        }
+        const next = await refreshAccessToken();
+        if (!next) {
+          throw new ApiError(copy.sessionExpired, 401);
+        }
+        return fn(next);
+      }
+    },
+    [refreshAccessToken],
+  );
+
+  const refreshProfile = useCallback(async () => {
+    const token = tokensRef.current.accessToken;
+    if (!token) {
+      return;
+    }
+    const me = await fetchMe(token);
+    setSession((current) => sessionFromMe(me, current.activeMode));
+  }, []);
 
   const switchToDriverMode = useCallback(() => {
     if (!session.canUseDriverMode) {
@@ -168,8 +260,6 @@ export function SessionProvider({ children }: PropsWithChildren) {
     setSession((current) => ({ ...current, activeMode: 'customer' }));
   }, []);
 
-  const getAccessToken = useCallback(() => tokens.accessToken, [tokens.accessToken]);
-
   const value = useMemo(
     () => ({
       session,
@@ -179,6 +269,8 @@ export function SessionProvider({ children }: PropsWithChildren) {
       switchToDriverMode,
       switchToCustomerMode,
       getAccessToken,
+      authed,
+      refreshProfile,
     }),
     [
       session,
@@ -188,6 +280,8 @@ export function SessionProvider({ children }: PropsWithChildren) {
       switchToDriverMode,
       switchToCustomerMode,
       getAccessToken,
+      authed,
+      refreshProfile,
     ],
   );
 

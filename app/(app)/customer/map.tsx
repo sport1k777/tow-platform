@@ -10,10 +10,12 @@ import {
 import MapView, { Marker, Polyline, type MapPressEvent } from 'react-native-maps';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { fetchServiceTypes } from '@/api/catalog';
 import { fetchRoute, geocode, reverseGeocode, type GeoPlace, type GeoRoute } from '@/api/geo';
 import { defaultMapRegion } from '@/config/map';
 import { isServiceKey, serviceDestinationPolicy } from '@/config/services';
 import { copy } from '@/copy/uk';
+import { formatRouteSummary } from '@/format/money';
 import { getForegroundLocation } from '@/maps/location';
 import { useSession } from '@/session';
 import { colors } from '@/theme';
@@ -22,9 +24,11 @@ type ActivePin = 'pickup' | 'destination';
 
 export default function CustomerMapScreen() {
   const { service } = useLocalSearchParams<{ service?: string }>();
-  const { getAccessToken } = useSession();
+  const { authed } = useSession();
   const serviceKey = isServiceKey(service) ? service : 'tow';
-  const destinationRequired = serviceDestinationPolicy[serviceKey] === 'required';
+  const [destinationRequired, setDestinationRequired] = useState(
+    serviceDestinationPolicy[serviceKey] === 'required',
+  );
 
   const [query, setQuery] = useState('');
   const [activePin, setActivePin] = useState<ActivePin>('pickup');
@@ -58,34 +62,47 @@ export default function CustomerMapScreen() {
       return;
     }
 
-    const token = getAccessToken();
-    if (!token) {
-      setError(copy.authError);
-      setBusy(false);
-      return;
-    }
-
     try {
-      const place = await reverseGeocode(location.lat, location.lng, token);
+      const place = await authed((token) =>
+        reverseGeocode(location.lat, location.lng, token),
+      );
       setPickup(place);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : copy.mapOutsideUkraine);
     } finally {
       setBusy(false);
     }
-  }, [getAccessToken]);
+  }, [authed]);
 
   useEffect(() => {
-    const token = getAccessToken();
-    if (!token || !pickup || !destination) {
+    let cancelled = false;
+    void authed((token) => fetchServiceTypes(token))
+      .then((response) => {
+        const item = response.items.find((entry) => entry.key === serviceKey);
+        if (!cancelled && item) {
+          setDestinationRequired(item.destinationPolicy === 'required');
+        }
+      })
+      .catch(() => {
+        // Keep the local destination policy fallback.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authed, serviceKey]);
+
+  useEffect(() => {
+    if (!pickup || !destination) {
       return;
     }
 
     let cancelled = false;
-    void fetchRoute(
-      { lat: pickup.lat, lng: pickup.lng },
-      { lat: destination.lat, lng: destination.lng },
-      token,
+    void authed((token) =>
+      fetchRoute(
+        { lat: pickup.lat, lng: pickup.lng },
+        { lat: destination.lat, lng: destination.lng },
+        token,
+      ),
     )
       .then((next) => {
         if (!cancelled) {
@@ -103,18 +120,13 @@ export default function CustomerMapScreen() {
     return () => {
       cancelled = true;
     };
-  }, [pickup, destination, getAccessToken]);
+  }, [pickup, destination, authed]);
 
   async function onSearch() {
-    const token = getAccessToken();
-    if (!token) {
-      setError(copy.authError);
-      return;
-    }
     setBusy(true);
     setError(null);
     try {
-      const response = await geocode(query, token);
+      const response = await authed((token) => geocode(query, token));
       setResults(response.items);
       if (response.items.length === 0) {
         setError(copy.mapNoResults);
@@ -137,17 +149,11 @@ export default function CustomerMapScreen() {
   }
 
   async function onMapPress(event: MapPressEvent) {
-    const token = getAccessToken();
-    if (!token) {
-      setError(copy.authError);
-      return;
-    }
-
     const { latitude, longitude } = event.nativeEvent.coordinate;
     setBusy(true);
     setError(null);
     try {
-      const place = await reverseGeocode(latitude, longitude, token);
+      const place = await authed((token) => reverseGeocode(latitude, longitude, token));
       applyPlace(place);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : copy.mapOutsideUkraine);
@@ -253,7 +259,7 @@ export default function CustomerMapScreen() {
 
         {pickup && destination && route ? (
           <Text style={styles.routeSummary}>
-            {formatRoute(route.distanceMeters, route.durationSeconds)}
+            {formatRouteSummary(route.distanceMeters, route.durationSeconds)}
           </Text>
         ) : null}
 
@@ -278,19 +284,25 @@ export default function CustomerMapScreen() {
             !canConfirm && styles.disabled,
             pressed && styles.pressed,
           ]}
-          onPress={() => router.back()}
+          onPress={() => {
+            if (!pickup) {
+              return;
+            }
+            router.push({
+              pathname: './details',
+              params: {
+                service: serviceKey,
+                pickup: JSON.stringify(pickup),
+                destination: destination ? JSON.stringify(destination) : '',
+              },
+            });
+          }}
         >
           <Text style={styles.primaryLabel}>{copy.mapDone}</Text>
         </Pressable>
       </View>
     </SafeAreaView>
   );
-}
-
-function formatRoute(distanceMeters: number, durationSeconds: number): string {
-  const km = (distanceMeters / 1000).toFixed(1);
-  const minutes = Math.max(1, Math.round(durationSeconds / 60));
-  return `${km} км · ${minutes} хв`;
 }
 
 const styles = StyleSheet.create({

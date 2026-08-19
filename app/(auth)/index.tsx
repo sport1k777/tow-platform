@@ -3,6 +3,13 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import {
+  formatLocalUa,
+  isCompleteUaMobile,
+  localDigitsFromInput,
+  toE164,
+  uaPhonePrefix,
+} from '@/phone/ua';
 import { copy } from '@/copy/uk';
 import { useSession } from '@/session';
 import { colors } from '@/theme';
@@ -19,7 +26,7 @@ export default function AuthScreen() {
     setBusy(true);
     setError(null);
     try {
-      const result = await requestOtp(phone);
+      const result = await requestOtp(toE164(phone));
       setCodeSent(true);
       if (result.devCode) {
         setCode(result.devCode);
@@ -35,7 +42,7 @@ export default function AuthScreen() {
     setBusy(true);
     setError(null);
     try {
-      await verifyOtp(phone, code);
+      await verifyOtp(toE164(phone), code);
       router.replace('/customer');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : copy.authError);
@@ -51,22 +58,25 @@ export default function AuthScreen() {
         <Text style={styles.title}>{copy.authTitle}</Text>
         <Text style={styles.subtitle}>{copy.authSubtitle}</Text>
 
+        <Text style={styles.prefix}>{uaPhonePrefix}</Text>
         <TextInput
           accessibilityLabel={copy.phonePlaceholder}
           autoCapitalize="none"
           autoCorrect={false}
-          keyboardType="phone-pad"
-          placeholder={copy.phonePlaceholder}
+          keyboardType="number-pad"
+          maxLength={11}
+          placeholder={copy.phoneLocalHint}
           placeholderTextColor={colors.muted}
           style={styles.input}
-          value={phone}
-          onChangeText={setPhone}
+          value={formatLocalUa(phone)}
+          onChangeText={(value) => setPhone(localDigitsFromInput(value))}
         />
 
         {codeSent ? (
           <TextInput
             accessibilityLabel={copy.otpPlaceholder}
             keyboardType="number-pad"
+            maxLength={6}
             placeholder={copy.otpPlaceholder}
             placeholderTextColor={colors.muted}
             style={styles.input}
@@ -79,7 +89,7 @@ export default function AuthScreen() {
 
         <Pressable
           accessibilityRole="button"
-          disabled={busy}
+          disabled={busy || (!codeSent && !isCompleteUaMobile(phone))}
           style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
           onPress={codeSent ? onVerify : onRequestCode}
         >
@@ -133,6 +143,12 @@ const styles = StyleSheet.create({
     fontSize: 17,
     lineHeight: 24,
     marginBottom: 36,
+  },
+  prefix: {
+    color: colors.navy,
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 8,
   },
   input: {
     backgroundColor: colors.surface,

@@ -5,11 +5,7 @@ import { useSession } from '@/session';
 export default function Index() {
   const { session } = useSession();
 
-  if (session.isLoading) {
-    return null;
-  }
-
-  if (!session.isAuthenticated) {
+  if (session.isLoading || !session.isAuthenticated) {
     return <Redirect href="/(auth)" />;
   }
 

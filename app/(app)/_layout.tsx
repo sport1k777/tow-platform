@@ -11,6 +11,9 @@ export default function AppLayout() {
       <Stack.Protected guard={session.canUseDriverMode}>
         <Stack.Screen name="driver" />
       </Stack.Protected>
+      <Stack.Protected guard={session.canUseAdminMode}>
+        <Stack.Screen name="admin" />
+      </Stack.Protected>
     </Stack>
   );
 }

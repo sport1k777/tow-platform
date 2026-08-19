@@ -16,5 +16,6 @@ import { GeoService } from './geo.service';
       useFactory: createGeoProvider,
     },
   ],
+  exports: [GeoService, GEO_PROVIDER],
 })
 export class GeoModule {}

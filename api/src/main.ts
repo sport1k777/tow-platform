@@ -19,6 +19,8 @@ async function bootstrap(): Promise<void> {
       transform: true,
     }),
   );
+  const origins = env.CORS_ORIGINS === '*' ? true : env.CORS_ORIGINS.split(',').map((item) => item.trim());
+  app.enableCors({ origin: origins });
   app.enableShutdownHooks();
 
   await app.listen(env.PORT);

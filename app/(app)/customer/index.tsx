@@ -49,6 +49,32 @@ export default function CustomerHomeScreen() {
           ))}
         </View>
 
+        <Pressable
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.modeButton, pressed && styles.pressed]}
+          onPress={() => router.push('./history')}
+        >
+          <Text style={styles.modeLabel}>{copy.myOrders}</Text>
+        </Pressable>
+
+        <Pressable
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.modeButton, pressed && styles.pressed]}
+          onPress={() => router.push('./profile')}
+        >
+          <Text style={styles.modeLabel}>{copy.profileTitle}</Text>
+        </Pressable>
+
+        {session.canUseAdminMode ? (
+          <Pressable
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.modeButton, pressed && styles.pressed]}
+            onPress={() => router.replace('../admin')}
+          >
+            <Text style={styles.modeLabel}>{copy.switchToAdmin}</Text>
+          </Pressable>
+        ) : null}
+
         {session.canUseDriverMode ? (
           <Pressable
             accessibilityRole="button"

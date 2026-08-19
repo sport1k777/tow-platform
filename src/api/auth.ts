@@ -10,8 +10,10 @@ export type TokenPair = {
 export type MeResponse = {
   id: string;
   phone: string | null;
+  displayName?: string | null;
   roles: ('customer' | 'driver' | 'admin')[];
   canUseDriverMode: boolean;
+  canUseAdminMode?: boolean;
 };
 
 export function requestOtp(phone: string) {

@@ -14,3 +14,11 @@ export const serviceDestinationPolicy: Record<ServiceKey, DestinationPolicy> = {
 export function isServiceKey(value: string | undefined): value is ServiceKey {
   return serviceKeys.includes(value as ServiceKey);
 }
+
+export const vehicleCategories = ['car', 'suv', 'van', 'motorcycle'] as const;
+
+export type VehicleCategory = (typeof vehicleCategories)[number];
+
+export function isVehicleCategory(value: string | undefined): value is VehicleCategory {
+  return vehicleCategories.includes(value as VehicleCategory);
+}

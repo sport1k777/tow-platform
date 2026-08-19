@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 
 import { DATABASE } from '../db/database.tokens';
@@ -29,13 +29,35 @@ export class UsersService {
     return user;
   }
 
-  async createCustomer(phone: string): Promise<UserRecord> {
-    const [user] = await this.db.insert(users).values({ phone }).returning();
+  async createCustomer(phone: string, displayName?: string): Promise<UserRecord> {
+    const [user] = await this.db
+      .insert(users)
+      .values({ phone, displayName: displayName ?? null })
+      .returning();
     await this.db.insert(userRoles).values({
       userId: user.id,
       role: 'customer',
     });
     return user;
+  }
+
+  async updateDisplayName(userId: string, displayName: string): Promise<UserRecord> {
+    const [user] = await this.db
+      .update(users)
+      .set({ displayName, updatedAt: new Date() })
+      .where(eq(users.id, userId))
+      .returning();
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    return user;
+  }
+
+  async addRole(userId: string, role: 'customer' | 'driver' | 'admin'): Promise<void> {
+    await this.db
+      .insert(userRoles)
+      .values({ userId, role })
+      .onConflictDoNothing();
   }
 
   async getRoles(userId: string): Promise<Array<'customer' | 'driver' | 'admin'>> {
