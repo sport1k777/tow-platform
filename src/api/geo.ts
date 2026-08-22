@@ -1,9 +1,12 @@
+import type { PickupSource } from '@/geo/pickup-source';
+
 import { apiRequest } from './client';
 
 export type GeoPlace = {
   label: string;
   lat: number;
   lng: number;
+  source?: PickupSource;
 };
 
 export type GeoRoute = {

@@ -21,6 +21,7 @@ import {
   users,
 } from '../db/schema';
 import type { CreateOrderDto } from './dto';
+import { createPaymentProvider } from '../payments/create-payment-provider';
 import {
   ACTIVE_JOB_STATUSES,
   CUSTOMER_CANCELABLE_STATUSES,
@@ -36,6 +37,7 @@ export type OrderLocation = {
   lat: number;
   lng: number;
   label: string;
+  source?: string;
 };
 
 export type OrderHistoryItem = {
@@ -55,6 +57,10 @@ export type OrderResponse = {
   details: Record<string, unknown>;
   pickup: OrderLocation;
   destination: OrderLocation | null;
+  pickupLatitude: number;
+  pickupLongitude: number;
+  pickupAddress: string;
+  pickupSource: string;
   distanceMeters: number;
   durationSeconds: number;
   amountKopiyky: number;
@@ -83,6 +89,7 @@ type OrderRow = {
   pickupLabel: string;
   pickupLat: number | string;
   pickupLng: number | string;
+  pickupSource: string;
   destinationLabel: string | null;
   destinationLat: number | string | null;
   destinationLng: number | string | null;
@@ -127,6 +134,20 @@ export class OrdersService {
         throw new BadRequestException('Quote has expired');
       }
 
+      const baseDetails =
+        quote.details && typeof quote.details === 'object' && !Array.isArray(quote.details)
+          ? { ...(quote.details as Record<string, unknown>) }
+          : {};
+      delete baseDetails.payment;
+      if (body.paymentMethod) {
+        const payment = await createPaymentProvider().checkout({
+          method: body.paymentMethod,
+          amountKopiyky: quote.amountKopiyky,
+          currency: quote.currency,
+        });
+        baseDetails.payment = payment;
+      }
+
       const [consumed] = await tx
         .update(quotes)
         .set({ consumedAt: new Date() })
@@ -143,9 +164,10 @@ export class OrdersService {
           quoteId: quote.id,
           serviceKey: quote.serviceKey,
           vehicleCategory: quote.vehicleCategory,
-          details: quote.details,
+          details: baseDetails,
           pickupLabel: quote.pickupLabel,
           pickupLocation: sql`(select pickup_location from quotes where id = ${quote.id})`,
+          pickupSource: quote.pickupSource,
           destinationLabel: quote.destinationLabel,
           destinationLocation: sql`(select destination_location from quotes where id = ${quote.id})`,
           distanceMeters: quote.distanceMeters,
@@ -538,6 +560,7 @@ export class OrdersService {
       pickupLabel: orders.pickupLabel,
       pickupLat: sql<number>`ST_Y(${orders.pickupLocation}::geometry)`,
       pickupLng: sql<number>`ST_X(${orders.pickupLocation}::geometry)`,
+      pickupSource: orders.pickupSource,
       destinationLabel: orders.destinationLabel,
       destinationLat: sql<number | null>`ST_Y(${orders.destinationLocation}::geometry)`,
       destinationLng: sql<number | null>`ST_X(${orders.destinationLocation}::geometry)`,
@@ -581,8 +604,13 @@ export class OrdersService {
         lat: Number(row.pickupLat),
         lng: Number(row.pickupLng),
         label: row.pickupLabel,
+        source: row.pickupSource,
       },
       destination,
+      pickupLatitude: Number(row.pickupLat),
+      pickupLongitude: Number(row.pickupLng),
+      pickupAddress: row.pickupLabel,
+      pickupSource: row.pickupSource,
       distanceMeters: row.distanceMeters,
       durationSeconds: row.durationSeconds,
       amountKopiyky: row.amountKopiyky,

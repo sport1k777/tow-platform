@@ -116,6 +116,7 @@ describe('Matching and offers (e2e)', () => {
       vehicleCategory: 'car',
       services: options?.services ?? ['tow'],
       active: true,
+      approved: true,
     });
     return {
       user,

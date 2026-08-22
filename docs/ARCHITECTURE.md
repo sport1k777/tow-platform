@@ -19,11 +19,14 @@ One Expo binary serves three modes gated by roles: customer (default), driver (`
 
 ## Auth
 
-1. Customer enters 9 Ukrainian mobile digits. The client formats `XX XXX XX XX` and sends E.164 `+380XXXXXXXXX`.
-2. `POST /auth/otp/request` stores a hashed OTP, enforces resend windows and attempt caps.
-3. `SmsProvider` sends the code. The `dev` provider does not call a network SMS API; the API returns `devCode` outside production.
-4. Verify issues a short-lived JWT access token and a rotating refresh token stored in **expo-secure-store** (not AsyncStorage).
-5. Roles live on `user_roles`. Access tokens embed roles; `/auth/refresh` reloads roles from the database.
+1. The unauthenticated app opens a role picker. The user must choose **клієнт** or **водій** before phone/OTP.
+2. Customer or driver enters 9 Ukrainian mobile digits. The client formats `XX XXX XX XX` and sends E.164 `+380XXXXXXXXX` plus the chosen `role` on verify.
+3. `POST /auth/otp/request` stores a hashed OTP, enforces resend windows and attempt caps.
+4. `AUTH_OTP_MODE=mock` (development/test only) does not call an SMS gateway and returns `devCode` for on-device testing. Production requires `AUTH_OTP_MODE=sms` and never returns the code.
+5. `SmsProvider` is the production SMS port. The `dev` provider does not call a network SMS API and is blocked in production.
+6. Verify issues a short-lived JWT access token and a rotating refresh token stored in **expo-secure-store** (not AsyncStorage). Optional `role: "driver"` adds the driver role and an `incomplete` profile; omitting it keeps new users as customers only.
+7. After login the app restores the last `activeMode` (`customer` | `driver`) from SecureStore and lands on that stack. Driver screens are available as soon as the role exists; going online and receiving offers still require `verification_status=approved`.
+8. Roles live on `user_roles`. Access tokens embed roles; `/auth/refresh` reloads roles from the database. Dual-mode (customer + driver) and admin remain available after login.
 
 ## Orders
 
@@ -62,4 +65,6 @@ Availability is derived:
 - `busy` — active job (`accepted` … `in_progress`)
 - `online` / `offline` — `is_online` flag plus last PostGIS location
 
-Admin approves or suspends; there is no KYC flow in this MVP.
+Admin reviews documents and can approve a driver only after required documents and an approved vehicle are in place. Documents are never auto-approved. `VERIFICATION_MODE=manual` (production default) queues uploads for review; `mock` is development-only and still never marks a document approved. External registry/OCR providers are not configured.
+
+Going online requires `verification_status=approved`, all required documents approved and unexpired, an approved active vehicle, and a complete name. The API rejects presence updates that skip that check.

@@ -1,4 +1,4 @@
-import { IsString, MinLength } from 'class-validator';
+import { IsIn, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class RequestOtpDto {
   @IsString()
@@ -14,6 +14,10 @@ export class VerifyOtpDto {
   @IsString()
   @MinLength(4)
   code!: string;
+
+  @IsOptional()
+  @IsIn(['customer', 'driver'])
+  role?: 'customer' | 'driver';
 }
 
 export class RefreshDto {

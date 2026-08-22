@@ -1,12 +1,19 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 
 import { fetchAdminPricing, saveAdminPricing } from '@/api/admin';
-import { copy } from '@/copy/uk';
+import { copy, serviceTitle } from '@/copy/uk';
 import { formatUah } from '@/format/money';
 import { useSession } from '@/session';
-import { colors } from '@/theme';
+import { colors, space } from '@/theme';
+import { AppText, Button, Card, NavBack, Screen, TextField, userFacingError } from '@/ui';
+
+const SERVICES = ['tow', 'moving', 'cargo', 'roadside'] as const;
+type ServiceKey = (typeof SERVICES)[number];
+
+function isServiceKey(value: string): value is ServiceKey {
+  return SERVICES.includes(value as ServiceKey);
+}
 
 export default function AdminPricingScreen() {
   const { authed } = useSession();
@@ -14,16 +21,28 @@ export default function AdminPricingScreen() {
     {
       id: string;
       serviceKey: string;
+      cityCode: string | null;
       vehicleCategory: string | null;
+      optionKey: string | null;
       baseFeeKopiyky: number;
       perKmKopiyky: number;
       minFeeKopiyky: number;
       active: boolean;
     }[]
   >([]);
-  const [base, setBase] = useState('50000');
-  const [perKm, setPerKm] = useState('2500');
-  const [min, setMin] = useState('50000');
+  const [serviceKey, setServiceKey] = useState('tow');
+  const [cityCode, setCityCode] = useState('kyiv');
+  const [vehicleCategory, setVehicleCategory] = useState('');
+  const [optionKey, setOptionKey] = useState('');
+  const [base, setBase] = useState('80000');
+  const [perKm, setPerKm] = useState('2000');
+  const [min, setMin] = useState('80000');
+  const [hourly, setHourly] = useState('50000');
+  const [mover, setMover] = useState('40000');
+  const [floorFee, setFloorFee] = useState('6000');
+  const [noElevator, setNoElevator] = useState('40000');
+  const [waiting, setWaiting] = useState('3000');
+  const [outsideKm, setOutsideKm] = useState('2500');
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -32,7 +51,7 @@ export default function AdminPricingScreen() {
       setItems(next.items);
       setError(null);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : copy.requestError);
+      setError(userFacingError(caught));
     }
   }, [authed]);
 
@@ -48,15 +67,42 @@ export default function AdminPricingScreen() {
     };
   }, [load]);
 
+  const visible = useMemo(
+    () =>
+      items.filter(
+        (rule) =>
+          rule.active &&
+          rule.serviceKey === serviceKey.trim() &&
+          (cityCode.trim() ? rule.cityCode === cityCode.trim() : true),
+      ),
+    [cityCode, items, serviceKey],
+  );
+
   async function onSave() {
+    const key = serviceKey.trim();
+    if (!isServiceKey(key)) {
+      setError(copy.priceService);
+      return;
+    }
     try {
       await authed((token) =>
         saveAdminPricing(
           {
-            serviceKey: 'tow',
+            serviceKey: key,
+            cityCode: cityCode.trim() || undefined,
+            vehicleCategory: vehicleCategory.trim()
+              ? (vehicleCategory.trim() as 'car' | 'suv' | 'van' | 'truck' | 'motorcycle')
+              : undefined,
+            optionKey: optionKey.trim() || undefined,
             baseFeeKopiyky: Number(base),
             perKmKopiyky: Number(perKm),
             minFeeKopiyky: Number(min),
+            hourlyFeeKopiyky: Number(hourly),
+            moverFeeKopiyky: Number(mover),
+            floorFeeKopiyky: Number(floorFee),
+            noElevatorFeeKopiyky: Number(noElevator),
+            waitingFeeKopiyky: Number(waiting),
+            outsideCityPerKmKopiyky: Number(outsideKm),
             active: true,
           },
           token,
@@ -64,83 +110,149 @@ export default function AdminPricingScreen() {
       );
       await load();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : copy.requestError);
+      setError(userFacingError(caught));
     }
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <View style={styles.container}>
-        <Text style={styles.title}>{copy.adminPricing}</Text>
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-        <TextInput
+    <Screen keyboard scroll>
+      <NavBack />
+      <AppText variant="hero">{copy.adminPricing}</AppText>
+      {error ? (
+        <AppText variant="caption" color={colors.error} style={styles.error}>
+          {error}
+        </AppText>
+      ) : null}
+
+      <View style={styles.form}>
+        <TextField
+          accessibilityLabel={copy.priceService}
+          autoCapitalize="none"
+          placeholder={copy.priceService}
+          value={serviceKey}
+          onChangeText={setServiceKey}
+        />
+        <TextField
+          accessibilityLabel={copy.priceCity}
+          autoCapitalize="none"
+          placeholder={copy.priceCity}
+          value={cityCode}
+          onChangeText={setCityCode}
+        />
+        <TextField
+          accessibilityLabel={copy.summaryVehicle}
+          autoCapitalize="none"
+          placeholder={copy.summaryVehicle}
+          value={vehicleCategory}
+          onChangeText={setVehicleCategory}
+        />
+        <TextField
+          accessibilityLabel={copy.priceOption}
+          autoCapitalize="none"
+          placeholder={copy.priceOption}
+          value={optionKey}
+          onChangeText={setOptionKey}
+        />
+        <TextField
+          accessibilityLabel={copy.priceBase}
           keyboardType="number-pad"
-          style={styles.input}
+          placeholder={copy.priceBase}
           value={base}
           onChangeText={setBase}
         />
-        <TextInput
+        <TextField
+          accessibilityLabel={copy.pricePerKm}
           keyboardType="number-pad"
-          style={styles.input}
+          placeholder={copy.pricePerKm}
           value={perKm}
           onChangeText={setPerKm}
         />
-        <TextInput
+        <TextField
+          accessibilityLabel={copy.priceMin}
           keyboardType="number-pad"
-          style={styles.input}
+          placeholder={copy.priceMin}
           value={min}
           onChangeText={setMin}
         />
-        <Pressable style={styles.primary} onPress={() => void onSave()}>
-          <Text style={styles.primaryLabel}>{copy.profileSave}</Text>
-        </Pressable>
-        <ScrollView contentContainerStyle={styles.list}>
-          {items.map((rule) => (
-            <View key={rule.id} style={styles.card}>
-              <Text style={styles.cardTitle}>
-                {rule.serviceKey} {rule.vehicleCategory ?? ''}
-              </Text>
-              <Text style={styles.meta}>{formatUah(rule.baseFeeKopiyky)}</Text>
-              <Text style={styles.meta}>{rule.active ? 'active' : 'off'}</Text>
-            </View>
-          ))}
-        </ScrollView>
+        <TextField
+          accessibilityLabel={copy.priceHourly}
+          keyboardType="number-pad"
+          placeholder={copy.priceHourly}
+          value={hourly}
+          onChangeText={setHourly}
+        />
+        <TextField
+          accessibilityLabel={copy.priceMover}
+          keyboardType="number-pad"
+          placeholder={copy.priceMover}
+          value={mover}
+          onChangeText={setMover}
+        />
+        <TextField
+          accessibilityLabel={copy.priceFloor}
+          keyboardType="number-pad"
+          placeholder={copy.priceFloor}
+          value={floorFee}
+          onChangeText={setFloorFee}
+        />
+        <TextField
+          accessibilityLabel={copy.priceNoElevator}
+          keyboardType="number-pad"
+          placeholder={copy.priceNoElevator}
+          value={noElevator}
+          onChangeText={setNoElevator}
+        />
+        <TextField
+          accessibilityLabel={copy.priceWaiting}
+          keyboardType="number-pad"
+          placeholder={copy.priceWaiting}
+          value={waiting}
+          onChangeText={setWaiting}
+        />
+        <TextField
+          accessibilityLabel={copy.priceOutsideKm}
+          keyboardType="number-pad"
+          placeholder={copy.priceOutsideKm}
+          value={outsideKm}
+          onChangeText={setOutsideKm}
+        />
+        <Button label={copy.profileSave} onPress={() => void onSave()} />
       </View>
-    </SafeAreaView>
+
+      <View style={styles.list}>
+        {visible.map((rule) => (
+          <Card key={rule.id} style={styles.card}>
+            <AppText variant="card">
+              {serviceTitle(rule.serviceKey)} {rule.cityCode ?? ''} {rule.vehicleCategory ?? ''}{' '}
+              {rule.optionKey ?? ''}
+            </AppText>
+            <AppText variant="title" color={colors.accent}>
+              {formatUah(rule.baseFeeKopiyky)}
+            </AppText>
+            <AppText variant="caption" color={colors.muted}>
+              {rule.active ? copy.onlineTitle : copy.offlineTitle}
+            </AppText>
+          </Card>
+        ))}
+      </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.background },
-  container: { flex: 1, paddingHorizontal: 20, paddingTop: 12 },
-  title: { color: colors.text, fontSize: 28, fontWeight: '700', marginBottom: 16 },
-  input: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 14,
-    borderWidth: 1,
-    color: colors.text,
-    fontSize: 17,
-    marginBottom: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+  error: {
+    marginTop: space.md,
   },
-  list: { gap: 12, paddingBottom: 24, paddingTop: 12 },
+  form: {
+    marginTop: space.xl,
+    gap: space.md,
+  },
+  list: {
+    marginTop: space.xl,
+    gap: space.md,
+    paddingBottom: space.xxl,
+  },
   card: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
+    gap: 6,
   },
-  cardTitle: { color: colors.text, fontSize: 16, fontWeight: '700' },
-  meta: { color: colors.muted, marginTop: 4 },
-  error: { color: colors.accent, marginBottom: 12 },
-  primary: {
-    backgroundColor: colors.accent,
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  primaryLabel: { color: colors.surface, fontWeight: '700' },
 });

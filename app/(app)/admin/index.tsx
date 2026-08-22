@@ -1,12 +1,12 @@
 import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { StyleSheet, View } from 'react-native';
 
 import { fetchAdminStats } from '@/api/admin';
 import { copy } from '@/copy/uk';
 import { useSession } from '@/session';
-import { colors } from '@/theme';
+import { colors, space } from '@/theme';
+import { AppText, Button, Card, Screen, userFacingError } from '@/ui';
 
 export default function AdminHomeScreen() {
   const { authed } = useSession();
@@ -23,7 +23,7 @@ export default function AdminHomeScreen() {
       setStats(next);
       setError(null);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : copy.requestError);
+      setError(userFacingError(caught));
     }
   }, [authed]);
 
@@ -40,72 +40,71 @@ export default function AdminHomeScreen() {
   }, [load]);
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <View style={styles.container}>
-        <Text style={styles.brand}>{copy.appName}</Text>
-        <Text style={styles.title}>{copy.adminTitle}</Text>
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+    <Screen scroll>
+      <AppText variant="caption" color={colors.muted} style={styles.brand}>
+        {copy.brandShort}
+      </AppText>
+      <AppText variant="hero">{copy.adminTitle}</AppText>
+      {error ? (
+        <AppText variant="caption" color={colors.error} style={styles.error}>
+          {error}
+        </AppText>
+      ) : null}
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>{copy.adminDashboard}</Text>
-          <Text style={styles.meta}>
-            {copy.adminUsers}: {stats?.users ?? '—'}
-          </Text>
-          <Text style={styles.meta}>
-            {copy.adminDrivers}: {stats?.drivers ?? '—'}
-          </Text>
-          <Text style={styles.meta}>
-            {copy.adminOrders}: {stats?.orders ?? '—'}
-          </Text>
-        </View>
-
-        <Pressable style={styles.modeButton} onPress={() => router.push('./orders')}>
-          <Text style={styles.modeLabel}>{copy.adminOrders}</Text>
-        </Pressable>
-        <Pressable style={styles.modeButton} onPress={() => router.push('./drivers')}>
-          <Text style={styles.modeLabel}>{copy.adminDrivers}</Text>
-        </Pressable>
-        <Pressable style={styles.modeButton} onPress={() => router.push('./pricing')}>
-          <Text style={styles.modeLabel}>{copy.adminPricing}</Text>
-        </Pressable>
-        <Pressable style={styles.secondary} onPress={() => router.replace('/customer')}>
-          <Text style={styles.secondaryLabel}>{copy.switchToCustomer}</Text>
-        </Pressable>
+      <View style={styles.metrics}>
+        <Card style={styles.metric}>
+          <AppText variant="caption" color={colors.muted}>
+            {copy.adminUsers}
+          </AppText>
+          <AppText variant="title">{stats?.users ?? '—'}</AppText>
+        </Card>
+        <Card style={styles.metric}>
+          <AppText variant="caption" color={colors.muted}>
+            {copy.adminDrivers}
+          </AppText>
+          <AppText variant="title">{stats?.drivers ?? '—'}</AppText>
+        </Card>
+        <Card style={styles.metric}>
+          <AppText variant="caption" color={colors.muted}>
+            {copy.adminOrders}
+          </AppText>
+          <AppText variant="title">{stats?.orders ?? '—'}</AppText>
+        </Card>
       </View>
-    </SafeAreaView>
+
+      <View style={styles.nav}>
+        <Button label={copy.adminOrders} variant="secondary" onPress={() => router.push('/admin/orders')} />
+        <Button label={copy.adminDrivers} variant="secondary" onPress={() => router.push('/admin/drivers')} />
+        <Button label={copy.adminPricing} variant="secondary" onPress={() => router.push('/admin/pricing')} />
+        <Button
+          label={copy.switchToCustomer}
+          variant="tertiary"
+          onPress={() => router.replace('/customer')}
+        />
+      </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.background },
-  container: { flex: 1, paddingHorizontal: 20, paddingTop: 12 },
   brand: {
-    color: colors.navy,
-    fontSize: 13,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    marginBottom: 8,
+    letterSpacing: 3,
+    marginBottom: space.sm,
   },
-  title: { color: colors.text, fontSize: 28, fontWeight: '700', marginBottom: 16 },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginBottom: 16,
+  error: {
+    marginTop: space.md,
   },
-  cardTitle: { color: colors.text, fontSize: 17, fontWeight: '700', marginBottom: 8 },
-  meta: { color: colors.muted, marginTop: 4 },
-  error: { color: colors.accent, marginBottom: 12 },
-  modeButton: {
-    marginTop: 12,
-    backgroundColor: colors.navy,
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: 'center',
+  metrics: {
+    flexDirection: 'row',
+    gap: space.md,
+    marginTop: space.xxl,
   },
-  modeLabel: { color: colors.surface, fontSize: 16, fontWeight: '700' },
-  secondary: { marginTop: 16, alignItems: 'center', paddingVertical: 12 },
-  secondaryLabel: { color: colors.muted, fontSize: 15, fontWeight: '600' },
+  metric: {
+    flex: 1,
+    gap: 6,
+  },
+  nav: {
+    marginTop: space.xxl,
+    gap: space.sm,
+  },
 });

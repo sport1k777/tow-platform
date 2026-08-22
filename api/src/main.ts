@@ -23,8 +23,8 @@ async function bootstrap(): Promise<void> {
   app.enableCors({ origin: origins });
   app.enableShutdownHooks();
 
-  await app.listen(env.PORT);
-  Logger.log(`API listening on port ${env.PORT} (${env.NODE_ENV})`, 'Bootstrap');
+  await app.listen(env.PORT, '0.0.0.0');
+  Logger.log(`API listening on 0.0.0.0:${env.PORT} (${env.NODE_ENV})`, 'Bootstrap');
 }
 
 bootstrap().catch((error: unknown) => {

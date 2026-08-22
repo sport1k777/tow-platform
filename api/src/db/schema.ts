@@ -33,7 +33,14 @@ export const vehicleCategoryEnum = pgEnum('vehicle_category', [
   'car',
   'suv',
   'van',
+  'truck',
   'motorcycle',
+]);
+
+export const pickupSourceEnum = pgEnum('pickup_source', [
+  'manual_address',
+  'current_location',
+  'map_pin',
 ]);
 
 export const orderStatusEnum = pgEnum('order_status', [
@@ -56,11 +63,50 @@ export const offerStatusEnum = pgEnum('offer_status', [
 ]);
 
 export const verificationStatusEnum = pgEnum('verification_status', [
+  'incomplete',
   'pending_verification',
   'under_review',
   'approved',
   'rejected',
   'suspended',
+  'expired',
+]);
+
+export const documentTypeEnum = pgEnum('document_type', [
+  'drivers_license',
+  'identity',
+  'vehicle_registration',
+  'insurance',
+]);
+
+export const documentStatusEnum = pgEnum('document_status', [
+  'not_submitted',
+  'uploaded',
+  'processing',
+  'needs_review',
+  'approved',
+  'rejected',
+  'expired',
+]);
+
+export const verificationEventActionEnum = pgEnum('verification_event_action', [
+  'DOCUMENT_UPLOADED',
+  'DOCUMENT_PROCESSING',
+  'DOCUMENT_APPROVED',
+  'DOCUMENT_REJECTED',
+  'DOCUMENT_REPLACED',
+  'DOCUMENT_EXPIRED',
+  'DRIVER_APPROVED',
+  'DRIVER_REJECTED',
+  'DRIVER_SUSPENDED',
+  'DRIVER_REACTIVATED',
+  'REUPLOAD_REQUESTED',
+]);
+
+export const verificationMethodEnum = pgEnum('verification_method', [
+  'none',
+  'manual_review',
+  'external_provider',
 ]);
 
 export const cancelledByEnum = pgEnum('cancelled_by', ['customer', 'driver', 'admin']);
@@ -94,6 +140,9 @@ export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
   phone: text('phone').unique(),
   displayName: text('display_name'),
+  firstName: text('first_name'),
+  lastName: text('last_name'),
+  avatarStorageKey: text('avatar_storage_key'),
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -164,12 +213,18 @@ export const pricingRules = pgTable(
     serviceKey: serviceKeyEnum('service_key')
       .notNull()
       .references(() => serviceTypes.key),
+    cityCode: text('city_code'),
     vehicleCategory: vehicleCategoryEnum('vehicle_category'),
+    optionKey: text('option_key'),
     baseFeeKopiyky: integer('base_fee_kopiyky').notNull(),
     perKmKopiyky: integer('per_km_kopiyky').notNull(),
     minFeeKopiyky: integer('min_fee_kopiyky').notNull(),
     nightMultiplierBps: integer('night_multiplier_bps').notNull().default(10000),
     weekendMultiplierBps: integer('weekend_multiplier_bps').notNull().default(10000),
+    config: jsonb('config')
+      .$type<Record<string, number>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
     active: boolean('active').notNull().default(true),
     validFrom: timestamp('valid_from', { withTimezone: true })
       .notNull()
@@ -181,7 +236,9 @@ export const pricingRules = pgTable(
   (table) => [
     index('pricing_rules_lookup_idx').on(
       table.serviceKey,
+      table.cityCode,
       table.vehicleCategory,
+      table.optionKey,
       table.active,
       table.validFrom.desc(),
     ),
@@ -206,13 +263,12 @@ export const quotes = pgTable(
       .default(sql`'{}'::jsonb`),
     pickupLabel: text('pickup_label').notNull(),
     pickupLocation: geographyPoint('pickup_location').notNull(),
+    pickupSource: pickupSourceEnum('pickup_source').notNull().default('manual_address'),
     destinationLabel: text('destination_label'),
     destinationLocation: geographyPoint('destination_location'),
     distanceMeters: integer('distance_meters').notNull(),
     durationSeconds: integer('duration_seconds').notNull(),
-    pricingRuleId: uuid('pricing_rule_id')
-      .notNull()
-      .references(() => pricingRules.id),
+    pricingRuleId: uuid('pricing_rule_id').references(() => pricingRules.id),
     amountKopiyky: integer('amount_kopiyky').notNull(),
     currency: text('currency').notNull().default('UAH'),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
@@ -239,7 +295,7 @@ export const driverProfiles = pgTable('driver_profiles', {
     .references(() => users.id, { onDelete: 'cascade' }),
   verificationStatus: verificationStatusEnum('verification_status')
     .notNull()
-    .default('pending_verification'),
+    .default('incomplete'),
   isOnline: boolean('is_online').notNull().default(false),
   lastLocation: geographyPoint('last_location'),
   lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
@@ -263,9 +319,13 @@ export const driverVehicles = pgTable(
       .references(() => driverProfiles.userId, { onDelete: 'cascade' }),
     vehicleCategory: vehicleCategoryEnum('vehicle_category').notNull(),
     plateNumber: text('plate_number'),
+    make: text('make'),
+    model: text('model'),
+    year: integer('year'),
     capacityKg: integer('capacity_kg'),
     services: serviceKeyEnum('services').array().notNull(),
     active: boolean('active').notNull().default(true),
+    approved: boolean('approved').notNull().default(false),
   },
   (table) => [
     index('driver_vehicles_driver_idx').on(table.driverUserId),
@@ -296,13 +356,12 @@ export const orders = pgTable(
       .default(sql`'{}'::jsonb`),
     pickupLabel: text('pickup_label').notNull(),
     pickupLocation: geographyPoint('pickup_location').notNull(),
+    pickupSource: pickupSourceEnum('pickup_source').notNull().default('manual_address'),
     destinationLabel: text('destination_label'),
     destinationLocation: geographyPoint('destination_location'),
     distanceMeters: integer('distance_meters').notNull(),
     durationSeconds: integer('duration_seconds').notNull(),
-    pricingRuleId: uuid('pricing_rule_id')
-      .notNull()
-      .references(() => pricingRules.id),
+    pricingRuleId: uuid('pricing_rule_id').references(() => pricingRules.id),
     amountKopiyky: integer('amount_kopiyky').notNull(),
     currency: text('currency').notNull().default('UAH'),
     status: orderStatusEnum('status').notNull(),
@@ -433,6 +492,67 @@ export const notifications = pgTable(
   (table) => [index('notifications_user_created_idx').on(table.userId, table.createdAt.desc())],
 );
 
+export const driverDocuments = pgTable(
+  'driver_documents',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    driverUserId: uuid('driver_user_id')
+      .notNull()
+      .references(() => driverProfiles.userId, { onDelete: 'cascade' }),
+    type: documentTypeEnum('type').notNull(),
+    storageKey: text('storage_key').notNull(),
+    mimeType: text('mime_type').notNull(),
+    byteSize: integer('byte_size').notNull(),
+    status: documentStatusEnum('status').notNull().default('uploaded'),
+    uploadedAt: timestamp('uploaded_at', { withTimezone: true }).notNull().defaultNow(),
+    processedAt: timestamp('processed_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    rejectionReason: text('rejection_reason'),
+    verificationMethod: verificationMethodEnum('verification_method')
+      .notNull()
+      .default('none'),
+    verifiedAt: timestamp('verified_at', { withTimezone: true }),
+    verifiedBy: uuid('verified_by').references(() => users.id, { onDelete: 'set null' }),
+    extractedData: jsonb('extracted_data')
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('driver_documents_driver_type_idx').on(table.driverUserId, table.type),
+    index('driver_documents_status_idx').on(table.status),
+  ],
+);
+
+export const verificationEvents = pgTable(
+  'verification_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    actorUserId: uuid('actor_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    driverUserId: uuid('driver_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    documentId: uuid('document_id').references(() => driverDocuments.id, {
+      onDelete: 'set null',
+    }),
+    action: verificationEventActionEnum('action').notNull(),
+    reason: text('reason'),
+    metadata: jsonb('metadata')
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('verification_events_driver_idx').on(table.driverUserId, table.createdAt.desc()),
+    index('verification_events_document_idx').on(table.documentId, table.createdAt.desc()),
+  ],
+);
+
 export const schema = {
   users,
   userRoles,
@@ -445,6 +565,10 @@ export const schema = {
   orderStatusEnum,
   offerStatusEnum,
   verificationStatusEnum,
+  documentTypeEnum,
+  documentStatusEnum,
+  verificationEventActionEnum,
+  verificationMethodEnum,
   cancelledByEnum,
   notificationChannelEnum,
   notificationStatusEnum,
@@ -453,6 +577,8 @@ export const schema = {
   quotes,
   driverProfiles,
   driverVehicles,
+  driverDocuments,
+  verificationEvents,
   orders,
   orderStatusHistory,
   orderOffers,

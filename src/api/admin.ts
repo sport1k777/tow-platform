@@ -29,6 +29,9 @@ export function fetchAdminDrivers(accessToken: string) {
       userId: string;
       phone: string | null;
       displayName: string | null;
+      firstName: string | null;
+      lastName: string | null;
+      hasAvatar: boolean;
       verificationStatus: string;
       isOnline: boolean;
       completedOrdersCount: number;
@@ -40,11 +43,12 @@ export function setAdminDriverStatus(
   userId: string,
   verificationStatus: string,
   accessToken: string,
+  reason?: string,
 ) {
-  return apiRequest<{ ok: true }>(`/admin/drivers/${userId}/status`, {
+  return apiRequest<{ verificationStatus: string }>(`/admin/drivers/${userId}/status`, {
     method: 'POST',
     accessToken,
-    body: { verificationStatus },
+    body: { verificationStatus, ...(reason ? { reason } : {}) },
   });
 }
 
@@ -53,12 +57,15 @@ export function fetchAdminPricing(accessToken: string) {
     items: {
       id: string;
       serviceKey: string;
+      cityCode: string | null;
       vehicleCategory: string | null;
+      optionKey: string | null;
       baseFeeKopiyky: number;
       perKmKopiyky: number;
       minFeeKopiyky: number;
       nightMultiplierBps: number;
       weekendMultiplierBps: number;
+      config: Record<string, number>;
       active: boolean;
     }[];
   }>('/admin/pricing', { accessToken });
@@ -67,12 +74,20 @@ export function fetchAdminPricing(accessToken: string) {
 export function saveAdminPricing(
   body: {
     serviceKey: 'tow' | 'moving' | 'cargo' | 'roadside';
-    vehicleCategory?: 'car' | 'suv' | 'van' | 'motorcycle';
+    cityCode?: string;
+    vehicleCategory?: 'car' | 'suv' | 'van' | 'truck' | 'motorcycle';
+    optionKey?: string;
     baseFeeKopiyky: number;
     perKmKopiyky: number;
     minFeeKopiyky: number;
     nightMultiplierBps?: number;
     weekendMultiplierBps?: number;
+    hourlyFeeKopiyky?: number;
+    moverFeeKopiyky?: number;
+    floorFeeKopiyky?: number;
+    noElevatorFeeKopiyky?: number;
+    waitingFeeKopiyky?: number;
+    outsideCityPerKmKopiyky?: number;
     active?: boolean;
   },
   accessToken: string,

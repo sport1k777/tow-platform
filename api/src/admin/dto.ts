@@ -13,8 +13,16 @@ export class AdminPricingDto {
   serviceKey!: 'tow' | 'moving' | 'cargo' | 'roadside';
 
   @IsOptional()
-  @IsIn(['car', 'suv', 'van', 'motorcycle'])
-  vehicleCategory?: 'car' | 'suv' | 'van' | 'motorcycle';
+  @IsString()
+  cityCode?: string;
+
+  @IsOptional()
+  @IsIn(['car', 'suv', 'van', 'truck', 'motorcycle'])
+  vehicleCategory?: 'car' | 'suv' | 'van' | 'truck' | 'motorcycle';
+
+  @IsOptional()
+  @IsString()
+  optionKey?: string;
 
   @Type(() => Number)
   @IsInt()
@@ -44,18 +52,68 @@ export class AdminPricingDto {
   weekendMultiplierBps?: number;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  hourlyFeeKopiyky?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  moverFeeKopiyky?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  floorFeeKopiyky?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  noElevatorFeeKopiyky?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  waitingFeeKopiyky?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  outsideCityPerKmKopiyky?: number;
+
+  @IsOptional()
   @IsBoolean()
   active?: boolean;
 }
 
 export class AdminDriverStatusDto {
-  @IsIn(['approved', 'suspended', 'rejected', 'under_review', 'pending_verification'])
+  @IsIn([
+    'approved',
+    'suspended',
+    'rejected',
+    'under_review',
+    'pending_verification',
+    'incomplete',
+    'expired',
+  ])
   verificationStatus!:
     | 'approved'
     | 'suspended'
     | 'rejected'
     | 'under_review'
-    | 'pending_verification';
+    | 'pending_verification'
+    | 'incomplete'
+    | 'expired';
+
+  @IsOptional()
+  @IsString()
+  reason?: string;
 }
 
 export class AdminOrderStatusDto {

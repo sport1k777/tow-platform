@@ -20,7 +20,7 @@ import {
 import { ApiError } from '@/api/client';
 import { copy } from '@/copy/uk';
 
-import { clearTokens, readTokens, saveTokens } from './tokenStore';
+import { clearTokens, readActiveMode, readTokens, saveActiveMode, saveTokens } from './tokenStore';
 
 export type AppMode = 'customer' | 'driver';
 
@@ -36,8 +36,10 @@ export type Session = {
 
 type SessionContextValue = {
   session: Session;
-  requestOtp: (phone: string) => Promise<{ devCode?: string }>;
-  verifyOtp: (phone: string, code: string) => Promise<void>;
+  selectedRole: AppMode | null;
+  selectRole: (role: AppMode) => Promise<void>;
+  requestOtp: (phone: string) => Promise<{ otpMode?: 'mock'; devCode?: string }>;
+  verifyOtp: (phone: string, code: string, role?: AppMode) => Promise<void>;
   signOut: () => Promise<void>;
   switchToDriverMode: () => boolean;
   switchToCustomerMode: () => void;
@@ -72,6 +74,7 @@ function sessionFromMe(me: MeResponse, activeMode: AppMode): Session {
 
 export function SessionProvider({ children }: PropsWithChildren) {
   const [session, setSession] = useState<Session>(guestSession);
+  const [selectedRole, setSelectedRole] = useState<AppMode | null>(null);
   const [tokens, setTokens] = useState<{
     accessToken: string | null;
     refreshToken: string | null;
@@ -87,11 +90,18 @@ export function SessionProvider({ children }: PropsWithChildren) {
     [],
   );
 
-  const applyTokens = useCallback(async (accessToken: string, refreshToken: string) => {
+  const applyTokens = useCallback(async (
+    accessToken: string,
+    refreshToken: string,
+    intendedMode: AppMode = 'customer',
+  ) => {
     await saveTokens(accessToken, refreshToken);
+    const resolvedMode: AppMode = intendedMode === 'driver' ? 'driver' : 'customer';
+    await saveActiveMode(resolvedMode);
+    setSelectedRole(resolvedMode);
     writeTokens({ accessToken, refreshToken });
     const me = await fetchMe(accessToken);
-    setSession(sessionFromMe(me, 'customer'));
+    setSession(sessionFromMe(me, resolvedMode));
   }, [writeTokens]);
 
   useEffect(() => {
@@ -102,6 +112,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
         const stored = await readTokens();
         if (!stored.accessToken && !stored.refreshToken) {
           if (!cancelled) {
+            setSelectedRole(null);
             setSession({ ...guestSession, isLoading: false });
           }
           return;
@@ -111,8 +122,10 @@ export function SessionProvider({ children }: PropsWithChildren) {
           if (stored.accessToken) {
             const me = await fetchMe(stored.accessToken);
             if (!cancelled) {
+              const storedMode = await readActiveMode();
               writeTokens(stored);
-              setSession(sessionFromMe(me, 'customer'));
+              setSelectedRole(storedMode ?? 'customer');
+              setSession(sessionFromMe(me, storedMode ?? 'customer'));
             }
             return;
           }
@@ -131,22 +144,26 @@ export function SessionProvider({ children }: PropsWithChildren) {
           await saveTokens(rotated.accessToken, rotated.refreshToken);
           const me = await fetchMe(rotated.accessToken);
           if (!cancelled) {
+            const storedMode = await readActiveMode();
             writeTokens({
               accessToken: rotated.accessToken,
               refreshToken: rotated.refreshToken,
             });
-            setSession(sessionFromMe(me, 'customer'));
+            setSelectedRole(storedMode ?? 'customer');
+            setSession(sessionFromMe(me, storedMode ?? 'customer'));
           }
         } catch {
           await clearTokens();
           if (!cancelled) {
             writeTokens({ accessToken: null, refreshToken: null });
+            setSelectedRole(null);
             setSession({ ...guestSession, isLoading: false });
           }
         }
       } catch {
         if (!cancelled) {
           writeTokens({ accessToken: null, refreshToken: null });
+          setSelectedRole(null);
           setSession({ ...guestSession, isLoading: false });
         }
       }
@@ -160,16 +177,23 @@ export function SessionProvider({ children }: PropsWithChildren) {
 
   const requestOtp = useCallback(async (phone: string) => {
     const result = await requestOtpApi(phone);
-    return { devCode: result.devCode };
+    return { otpMode: result.otpMode, devCode: result.devCode };
   }, []);
 
   const verifyOtp = useCallback(
-    async (phone: string, code: string) => {
-      const result = await verifyOtpApi(phone, code);
-      await applyTokens(result.accessToken, result.refreshToken);
+    async (phone: string, code: string, role: AppMode = 'customer') => {
+      const resolved: AppMode = role === 'driver' ? 'driver' : 'customer';
+      const result = await verifyOtpApi(phone, code, resolved);
+      await applyTokens(result.accessToken, result.refreshToken, resolved);
     },
     [applyTokens],
   );
+
+  const selectRole = useCallback(async (role: AppMode) => {
+    const resolved: AppMode = role === 'driver' ? 'driver' : 'customer';
+    setSelectedRole(resolved);
+    await saveActiveMode(resolved);
+  }, []);
 
   const getAccessToken = useCallback(() => tokens.accessToken, [tokens.accessToken]);
 
@@ -184,6 +208,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
     }
     await clearTokens();
     writeTokens({ accessToken: null, refreshToken: null });
+    setSelectedRole(null);
     setSession({ ...guestSession, isLoading: false });
   }, [writeTokens]);
 
@@ -253,16 +278,22 @@ export function SessionProvider({ children }: PropsWithChildren) {
       return false;
     }
     setSession((current) => ({ ...current, activeMode: 'driver' }));
+    setSelectedRole('driver');
+    void saveActiveMode('driver');
     return true;
   }, [session.canUseDriverMode]);
 
   const switchToCustomerMode = useCallback(() => {
     setSession((current) => ({ ...current, activeMode: 'customer' }));
+    setSelectedRole('customer');
+    void saveActiveMode('customer');
   }, []);
 
   const value = useMemo(
     () => ({
       session,
+      selectedRole,
+      selectRole,
       requestOtp,
       verifyOtp,
       signOut,
@@ -274,6 +305,8 @@ export function SessionProvider({ children }: PropsWithChildren) {
     }),
     [
       session,
+      selectedRole,
+      selectRole,
       requestOtp,
       verifyOtp,
       signOut,

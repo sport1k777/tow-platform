@@ -1,12 +1,17 @@
 {
   "expo": {
-    "name": "tow-platform",
+    "name": "TOW",
     "slug": "tow-platform",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "scheme": "towplatform",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#080B0F"
+    },
     "plugins": [
       "expo-dev-client",
       "expo-router",
@@ -15,11 +20,20 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Дозвольте визначити місце подачі заявки.",
+          "locationWhenInUsePermission": "Дозвольте доступ до геолокації, щоб поставити точку подачі евакуатора, навіть якщо поруч немає точної адреси.",
           "isIosBackgroundLocationEnabled": false,
           "isAndroidBackgroundLocationEnabled": false
         }
       ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Дозвольте доступ до фото, щоб завантажити аватар і документи водія.",
+          "cameraPermission": "Дозвольте камеру, щоб сфотографувати аватар або документ.",
+          "microphonePermission": false
+        }
+      ],
+      "expo-document-picker",
       "react-native-maps"
     ],
     "experiments": {
@@ -27,21 +41,28 @@
       "tsconfigPaths": true
     },
     "ios": {
+      "icon": "./assets/icon.png",
       "supportsTablet": true,
       "config": {
         "usesNonExemptEncryption": false
       },
       "bundleIdentifier": "com.anonymous.tow-platform",
-      "appleTeamId": "X53JZ35W8H"
+      "appleTeamId": "X53JZ35W8H",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Дозвольте камеру, щоб сфотографувати документ водія або аватар.",
+        "NSPhotoLibraryUsageDescription": "Дозвольте доступ до фото, щоб завантажити документ водія або аватар."
+      }
     },
     "android": {
+      "icon": "./assets/icon.png",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundColor": "#000000",
         "backgroundImage": "./assets/android-icon-background.png",
+        "foregroundImage": "./assets/android-icon-foreground.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
+      "softwareKeyboardLayoutMode": "resize",
       "package": "com.anonymous.towplatform",
       "permissions": [
         "android.permission.ACCESS_COARSE_LOCATION",

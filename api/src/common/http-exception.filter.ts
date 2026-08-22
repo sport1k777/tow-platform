@@ -5,8 +5,10 @@ import {
   HttpException,
   HttpStatus,
   Logger,
+  PayloadTooLargeException,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { MulterError } from 'multer';
 
 type ErrorBody = {
   statusCode: number;
@@ -34,6 +36,27 @@ export class GlobalExceptionFilter implements ExceptionFilter {
   }
 
   private toBody(exception: unknown): ErrorBody {
+    if (exception instanceof MulterError) {
+      if (exception.code === 'LIMIT_FILE_SIZE') {
+        return {
+          statusCode: HttpStatus.PAYLOAD_TOO_LARGE,
+          error: 'Payload Too Large',
+          message: 'File is too large',
+        };
+      }
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        error: 'Bad Request',
+        message: 'Invalid file upload',
+      };
+    }
+    if (exception instanceof PayloadTooLargeException) {
+      return {
+        statusCode: HttpStatus.PAYLOAD_TOO_LARGE,
+        error: 'Payload Too Large',
+        message: 'File is too large',
+      };
+    }
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
       const payload = exception.getResponse();

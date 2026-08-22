@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, inArray, ne, notExists, sql } from 'drizzle-orm';
 
-import { loadEnv } from '../config/env';
+import { isDevMatchingAutoAccept, loadEnv } from '../config/env';
 import type { Database } from '../db/database.module';
 import { DATABASE } from '../db/database.tokens';
 import {
@@ -75,16 +75,65 @@ export class MatchingService {
       }
       return null;
     });
-    if (offeredDriverId) {
-      await this.notifications.notify({
-        userId: offeredDriverId,
-        title: 'Нове замовлення',
-        body: 'Надійшла пропозиція замовлення',
-        data: { orderId, type: 'offer' },
-      });
+    if (typeof offeredDriverId === 'string') {
+      if (isDevMatchingAutoAccept()) {
+        setTimeout(() => {
+          void this.devAutoAccept(orderId, offeredDriverId);
+        }, 1800);
+      } else {
+        await this.notifications.notify({
+          userId: offeredDriverId,
+          title: 'Нове замовлення',
+          body: 'Надійшла пропозиція замовлення',
+          data: { orderId, type: 'offer' },
+        });
+      }
       return true;
     }
     return false;
+  }
+
+  /** Development fixture only. Never used in production or tests. */
+  private async devAutoAccept(orderId: string, driverId: string): Promise<void> {
+    if (!isDevMatchingAutoAccept()) {
+      return;
+    }
+    await this.db.transaction(async (tx) => {
+      const now = new Date();
+      const [offer] = await tx
+        .update(orderOffers)
+        .set({ status: 'accepted', resolvedAt: now })
+        .where(
+          and(
+            eq(orderOffers.orderId, orderId),
+            eq(orderOffers.driverId, driverId),
+            eq(orderOffers.status, 'pending'),
+          ),
+        )
+        .returning({ id: orderOffers.id });
+      if (!offer) {
+        return;
+      }
+      const [accepted] = await tx
+        .update(orders)
+        .set({
+          status: 'accepted',
+          driverId,
+          updatedAt: now,
+        })
+        .where(and(eq(orders.id, orderId), eq(orders.status, 'offered')))
+        .returning({ id: orders.id });
+      if (!accepted) {
+        return;
+      }
+      await tx.insert(orderStatusHistory).values({
+        orderId,
+        fromStatus: 'offered',
+        toStatus: 'accepted',
+        actorUserId: driverId,
+        reason: 'dev_auto_accept',
+      });
+    });
   }
 
   private async loadCandidates(

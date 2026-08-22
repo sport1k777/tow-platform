@@ -74,6 +74,22 @@ describe('Phase 5 schema (e2e)', () => {
     expect(result.rows[0]?.udt_name).toBe('geography');
   });
 
+  it('stores pickup_source on quotes and orders', async () => {
+    const result = await pool.query<{ table_name: string; column_name: string }>(
+      `select table_name, column_name
+         from information_schema.columns
+        where table_schema = 'public'
+          and column_name = 'pickup_source'
+          and table_name in ('quotes', 'orders')
+        order by table_name`,
+    );
+
+    expect(result.rows).toEqual([
+      { table_name: 'orders', column_name: 'pickup_source' },
+      { table_name: 'quotes', column_name: 'pickup_source' },
+    ]);
+  });
+
   it('seeds service types with destination policy', async () => {
     const result = await pool.query<{
       key: string;
@@ -92,80 +108,59 @@ describe('Phase 5 schema (e2e)', () => {
     ]);
   });
 
-  it('seeds replaceable placeholder pricing rules in kopiyky', async () => {
+  it('seeds service-specific city tariffs in kopiyky', async () => {
     const result = await pool.query<{
       service_key: string;
+      city_code: string | null;
       vehicle_category: string | null;
+      option_key: string | null;
       base_fee_kopiyky: number;
-      per_km_kopiyky: number;
-      min_fee_kopiyky: number;
     }>(
       `select service_key::text,
+              city_code,
               vehicle_category::text,
-              base_fee_kopiyky,
-              per_km_kopiyky,
-              min_fee_kopiyky
+              option_key,
+              base_fee_kopiyky
          from pricing_rules
         where active = true
-        order by service_key, vehicle_category nulls first`,
+          and city_code = 'kyiv'
+          and (
+            (service_key = 'tow' and vehicle_category = 'car' and option_key is null)
+            or (service_key = 'moving' and option_key = 'medium' and vehicle_category is null)
+            or (service_key = 'cargo' and option_key = 'van' and vehicle_category is null)
+            or (service_key = 'roadside' and option_key = 'battery' and vehicle_category is null)
+          )
+        order by service_key`,
     );
 
     expect(result.rows).toEqual([
       {
         service_key: 'cargo',
+        city_code: 'kyiv',
         vehicle_category: null,
-        base_fee_kopiyky: 90000,
-        per_km_kopiyky: 4500,
-        min_fee_kopiyky: 90000,
+        option_key: 'van',
+        base_fee_kopiyky: 90_000,
       },
       {
         service_key: 'moving',
+        city_code: 'kyiv',
         vehicle_category: null,
-        base_fee_kopiyky: 80000,
-        per_km_kopiyky: 4000,
-        min_fee_kopiyky: 80000,
+        option_key: 'medium',
+        base_fee_kopiyky: 150_000,
       },
       {
         service_key: 'roadside',
+        city_code: 'kyiv',
         vehicle_category: null,
-        base_fee_kopiyky: 40000,
-        per_km_kopiyky: 0,
-        min_fee_kopiyky: 40000,
+        option_key: 'battery',
+        base_fee_kopiyky: 50_000,
       },
       {
         service_key: 'tow',
-        vehicle_category: null,
-        base_fee_kopiyky: 50000,
-        per_km_kopiyky: 2500,
-        min_fee_kopiyky: 50000,
-      },
-      {
-        service_key: 'tow',
+        city_code: 'kyiv',
         vehicle_category: 'car',
-        base_fee_kopiyky: 50000,
-        per_km_kopiyky: 2500,
-        min_fee_kopiyky: 50000,
-      },
-      {
-        service_key: 'tow',
-        vehicle_category: 'motorcycle',
-        base_fee_kopiyky: 35000,
-        per_km_kopiyky: 2000,
-        min_fee_kopiyky: 35000,
-      },
-      {
-        service_key: 'tow',
-        vehicle_category: 'suv',
-        base_fee_kopiyky: 65000,
-        per_km_kopiyky: 3000,
-        min_fee_kopiyky: 65000,
-      },
-      {
-        service_key: 'tow',
-        vehicle_category: 'van',
-        base_fee_kopiyky: 80000,
-        per_km_kopiyky: 3500,
-        min_fee_kopiyky: 80000,
+        option_key: null,
+        base_fee_kopiyky: 80_000,
       },
     ]);
   });

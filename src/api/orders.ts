@@ -31,6 +31,10 @@ export type OrderResponse = {
   details: Record<string, unknown>;
   pickup: GeoPlace;
   destination: GeoPlace | null;
+  pickupLatitude?: number;
+  pickupLongitude?: number;
+  pickupAddress?: string;
+  pickupSource?: string;
   distanceMeters: number;
   durationSeconds: number;
   amountKopiyky: number;
@@ -48,11 +52,18 @@ export type OrderResponse = {
   history?: OrderHistoryItem[];
 };
 
-export function createOrder(quoteId: string, accessToken: string) {
+export function createOrder(
+  quoteId: string,
+  accessToken: string,
+  paymentMethod?: 'cash' | 'card' | 'apple_pay' | 'google_pay',
+) {
   return apiRequest<OrderResponse>('/orders', {
     method: 'POST',
     accessToken,
-    body: { quoteId },
+    body: {
+      quoteId,
+      ...(paymentMethod ? { paymentMethod } : {}),
+    },
   });
 }
 

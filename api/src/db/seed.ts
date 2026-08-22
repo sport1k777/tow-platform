@@ -6,6 +6,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 
 import { loadEnv } from '../config/env';
+import { defaultTariffs } from '../pricing/catalog';
 import {
   driverProfiles,
   driverVehicles,
@@ -18,6 +19,8 @@ import {
 } from './schema';
 
 const SEED_USERS = [
+  // Local matching fixture only. Production registration never uses these phones
+  // or auto-approves a driver.
   {
     phone: '+380501111111',
     displayName: 'Тестовий клієнт',
@@ -108,6 +111,7 @@ async function upsertUser(
         capacityKg: 2000,
         services: ['tow', 'roadside', 'moving', 'cargo'],
         active: true,
+        approved: true,
       });
     }
   }
@@ -117,6 +121,9 @@ async function upsertUser(
 
 async function run(): Promise<void> {
   const env = loadEnv();
+  if (env.NODE_ENV === 'production') {
+    throw new Error('db:seed is a development fixture and cannot run in production');
+  }
   const pool = new Pool({ connectionString: env.DATABASE_URL });
   const db = drizzle(pool, { schema });
 
@@ -131,46 +138,22 @@ async function run(): Promise<void> {
       ])
       .onConflictDoNothing();
 
-    const existingRules = await db.select({ id: pricingRules.id }).from(pricingRules).limit(1);
-    if (existingRules.length === 0) {
-      await db.insert(pricingRules).values([
-        {
-          serviceKey: 'tow',
-          vehicleCategory: null,
-          baseFeeKopiyky: 50_000,
-          perKmKopiyky: 2_500,
-          minFeeKopiyky: 50_000,
-        },
-        {
-          serviceKey: 'tow',
-          vehicleCategory: 'car',
-          baseFeeKopiyky: 50_000,
-          perKmKopiyky: 2_500,
-          minFeeKopiyky: 50_000,
-        },
-        {
-          serviceKey: 'moving',
-          vehicleCategory: null,
-          baseFeeKopiyky: 80_000,
-          perKmKopiyky: 3_000,
-          minFeeKopiyky: 80_000,
-        },
-        {
-          serviceKey: 'cargo',
-          vehicleCategory: null,
-          baseFeeKopiyky: 70_000,
-          perKmKopiyky: 2_800,
-          minFeeKopiyky: 70_000,
-        },
-        {
-          serviceKey: 'roadside',
-          vehicleCategory: null,
-          baseFeeKopiyky: 40_000,
-          perKmKopiyky: 0,
-          minFeeKopiyky: 40_000,
-        },
-      ]);
-    }
+    await db.update(pricingRules).set({ active: false });
+    await db.insert(pricingRules).values(
+      defaultTariffs.map((tariff) => ({
+        cityCode: tariff.cityCode,
+        serviceKey: tariff.serviceKey,
+        vehicleCategory: tariff.vehicleCategory,
+        optionKey: tariff.optionKey,
+        baseFeeKopiyky: tariff.baseFeeKopiyky,
+        perKmKopiyky: tariff.perKmKopiyky,
+        minFeeKopiyky: tariff.minFeeKopiyky,
+        nightMultiplierBps: tariff.nightMultiplierBps,
+        weekendMultiplierBps: tariff.weekendMultiplierBps,
+        config: tariff.config,
+        active: true,
+      })),
+    );
 
     for (const user of SEED_USERS) {
       await upsertUser(db, user);

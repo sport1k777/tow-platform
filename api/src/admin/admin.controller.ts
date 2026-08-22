@@ -2,19 +2,27 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Inject,
+  NotFoundException,
   Param,
   ParseUUIDPipe,
   Post,
   Query,
+  Res,
+  StreamableFile,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 
 import type { AccessPayload } from '../auth/auth.service';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
+import { UsersService } from '../users/users.service';
+import { RejectReasonDto } from '../verification/dto';
+import { DocumentsService } from '../verification/documents.service';
 import { AdminService } from './admin.service';
 import { AdminDriverStatusDto, AdminOrderStatusDto, AdminPricingDto } from './dto';
 
@@ -22,7 +30,11 @@ import { AdminDriverStatusDto, AdminOrderStatusDto, AdminPricingDto } from './dt
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('admin')
 export class AdminController {
-  constructor(@Inject(AdminService) private readonly admin: AdminService) {}
+  constructor(
+    @Inject(AdminService) private readonly admin: AdminService,
+    @Inject(DocumentsService) private readonly documents: DocumentsService,
+    @Inject(UsersService) private readonly users: UsersService,
+  ) {}
 
   @Get('stats')
   stats() {
@@ -54,7 +66,7 @@ export class AdminController {
   }
 
   @Get('users')
-  users() {
+  usersList() {
     return this.admin.listUsers();
   }
 
@@ -63,12 +75,71 @@ export class AdminController {
     return this.admin.listDrivers();
   }
 
+  @Get('drivers/:id/verification')
+  driverVerification(@Param('id', new ParseUUIDPipe()) id: string) {
+    return this.documents.getAdminDriverVerification(id);
+  }
+
+  @Get('drivers/:id/avatar')
+  @Header('Cache-Control', 'private, max-age=60')
+  async driverAvatar(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const record = await this.users.findById(id);
+    if (!record) {
+      throw new NotFoundException('Driver not found');
+    }
+    const file = this.users.avatarFile(record);
+    response.setHeader('Content-Type', file.mimeType);
+    return new StreamableFile(file.stream);
+  }
+
+  @Get('drivers/:id/documents/:documentId/file')
+  @Header('Cache-Control', 'private, no-store')
+  async driverDocumentFile(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('documentId', new ParseUUIDPipe()) documentId: string,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const file = await this.documents.openDocumentFile(id, documentId, true);
+    response.setHeader('Content-Type', file.mimeType);
+    return new StreamableFile(file.stream);
+  }
+
   @Post('drivers/:id/status')
   driverStatus(
+    @CurrentUser() user: AccessPayload,
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body() body: AdminDriverStatusDto,
   ) {
-    return this.admin.setDriverStatus(id, body);
+    return this.admin.setDriverStatus(user.sub, id, body);
+  }
+
+  @Post('documents/:id/approve')
+  approveDocument(
+    @CurrentUser() user: AccessPayload,
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ) {
+    return this.documents.approveDocument(user.sub, id);
+  }
+
+  @Post('documents/:id/reject')
+  rejectDocument(
+    @CurrentUser() user: AccessPayload,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() body: RejectReasonDto,
+  ) {
+    return this.documents.rejectDocument(user.sub, id, body.reason);
+  }
+
+  @Post('documents/:id/reupload')
+  requestReupload(
+    @CurrentUser() user: AccessPayload,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() body: RejectReasonDto,
+  ) {
+    return this.documents.requestReupload(user.sub, id, body.reason);
   }
 
   @Get('pricing')

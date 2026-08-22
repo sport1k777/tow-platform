@@ -7,6 +7,10 @@ export function formatUah(kopiyky: number): string {
   return `₴ ${formatted}`;
 }
 
+export function formatDistanceKm(distanceMeters: number): string {
+  return `${(distanceMeters / 1000).toFixed(1)} км`;
+}
+
 export function formatEta(durationSeconds: number): string {
   const minutes = Math.max(1, Math.round(durationSeconds / 60));
   return `${minutes} хв`;

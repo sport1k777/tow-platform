@@ -8,8 +8,8 @@ All JSON errors use `{ "statusCode", "message" }` via the global exception filte
 
 | Method | Path | Auth | Notes |
 | --- | --- | --- | --- |
-| POST | `/auth/otp/request` | no | Body `{ phone }`. Non-production returns `devCode`. |
-| POST | `/auth/otp/verify` | no | `{ phone, code }` → token pair |
+| POST | `/auth/otp/request` | no | Body `{ phone }`. When `AUTH_OTP_MODE=mock` (development/test only) the response includes `otpMode: "mock"` and `devCode`. Production `AUTH_OTP_MODE=sms` never returns a code. |
+| POST | `/auth/otp/verify` | no | `{ phone, code, role? }`. Optional `role` is `customer` (default) or `driver`. `driver` keeps the customer role, adds `driver`, and creates an `incomplete` profile. Does not grant admin. |
 | POST | `/auth/refresh` | no | Rotates refresh token; reloads roles |
 | POST | `/auth/logout` | yes | Revokes the presented refresh token |
 | GET | `/me` | yes | `phone`, `displayName`, `roles`, `canUseDriverMode`, `canUseAdminMode` |
@@ -18,15 +18,22 @@ All JSON errors use `{ "statusCode", "message" }` via the global exception filte
 
 | Method | Path | Auth |
 | --- | --- | --- |
-| GET | `/users/me` | any logged-in user |
-| PATCH | `/users/me` | `{ displayName }` |
+| GET | `/users/me` | any logged-in user. Returns `firstName`, `lastName`, `hasAvatar`, `displayName`, `phone`, `roles`. |
+| PATCH | `/users/me` | `{ firstName?, lastName?, displayName? }` |
+| POST | `/users/me/avatar` | multipart field `file` (JPEG/PNG/WEBP) |
+| DELETE | `/users/me/avatar` | |
+| GET | `/users/me/avatar` | authenticated image stream; not a public URL |
 
 ## Drivers / vehicles
 
 | Method | Path | Role |
 | --- | --- | --- |
-| GET | `/drivers/me` | driver |
-| POST | `/drivers/me/presence` | approved driver `{ online, lat?, lng? }` |
+| GET | `/drivers/me` | driver. Includes `canGoOnline`, `blockers`, `firstName`, `lastName`, `hasAvatar`, vehicle `make`/`model`/`approved`. |
+| POST | `/drivers/me/presence` | approved driver with required documents + approved vehicle `{ online, lat?, lng? }` |
+| GET | `/drivers/me/verification` | driver. Document statuses from the database. Never auto-approved. |
+| POST | `/drivers/me/documents` | multipart `file` + `type` |
+| POST | `/drivers/me/documents/:id/replace` | multipart `file` |
+| GET | `/drivers/me/documents/:id/file` | authenticated stream of the driver's own document |
 | GET | `/driver/offers/current` | approved driver |
 | POST | `/driver/offers/:id/accept` | approved driver |
 | POST | `/driver/offers/:id/reject` | approved driver |
@@ -80,7 +87,13 @@ Role `admin` required.
 | GET | `/admin/orders/export` `{ csv }` |
 | GET | `/admin/users` |
 | GET | `/admin/drivers` |
-| POST | `/admin/drivers/:id/status` `{ verificationStatus }` |
+| GET | `/admin/drivers/:id/verification` |
+| GET | `/admin/drivers/:id/avatar` |
+| GET | `/admin/drivers/:id/documents/:documentId/file` |
+| POST | `/admin/drivers/:id/status` `{ verificationStatus, reason? }` (`rejected` requires reason; `approved` requires all required documents + approved vehicle + complete profile) |
+| POST | `/admin/documents/:id/approve` |
+| POST | `/admin/documents/:id/reject` `{ reason }` |
+| POST | `/admin/documents/:id/reupload` `{ reason }` |
 | GET | `/admin/pricing` |
 | POST | `/admin/pricing` |
 

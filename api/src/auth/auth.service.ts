@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { and, desc, eq, gt, isNull } from 'drizzle-orm';
 
-import { loadEnv } from '../config/env';
+import { isMockOtpEnabled, loadEnv } from '../config/env';
 import { DATABASE } from '../db/database.tokens';
 import type { Database } from '../db/database.module';
 import { otpChallenges, refreshTokens } from '../db/schema';
@@ -46,6 +46,7 @@ export class AuthService {
   async requestOtp(rawPhone: string): Promise<{
     sent: true;
     expiresIn: number;
+    otpMode?: 'mock';
     devCode?: string;
   }> {
     const env = loadEnv();
@@ -65,16 +66,23 @@ export class AuthService {
       codeHash: hmacSha256(code, env.JWT_SECRET),
       expiresAt,
     });
-    await this.sms.sendOtp(phone, code);
+    const mockOtp = isMockOtpEnabled(env);
+    if (!mockOtp) {
+      await this.sms.sendOtp(phone, code);
+    }
 
     return {
       sent: true,
       expiresIn: env.OTP_TTL_SECONDS,
-      ...(env.NODE_ENV === 'production' ? {} : { devCode: code }),
+      ...(mockOtp ? { otpMode: 'mock' as const, devCode: code } : {}),
     };
   }
 
-  async verifyOtp(rawPhone: string, code: string): Promise<TokenPair> {
+  async verifyOtp(
+    rawPhone: string,
+    code: string,
+    intendedRole: 'customer' | 'driver' = 'customer',
+  ): Promise<TokenPair> {
     const env = loadEnv();
     const phone = this.requireUaPhone(rawPhone);
     const [challenge] = await this.db
@@ -126,6 +134,10 @@ export class AuthService {
 
     const existing = await this.users.findByPhone(phone);
     const user = existing ?? (await this.users.createCustomer(phone));
+    if (intendedRole === 'driver') {
+      await this.users.addRole(user.id, 'driver');
+      await this.users.ensureDriverProfile(user.id);
+    }
     const roles = await this.users.getRoles(user.id);
     return this.issueTokens(user.id, roles);
   }

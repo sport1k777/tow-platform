@@ -21,10 +21,13 @@ Suggested split:
 Required production env (see `api/src/config/env.ts`):
 
 - `NODE_ENV=production`
+- `AUTH_OTP_MODE=sms` (never `mock`)
 - `DATABASE_URL` (TLS)
 - `JWT_SECRET` (≥32 random chars)
 - `SMS_PROVIDER` **not** `dev`
 - `NOTIFICATION_PROVIDER` **not** `dev`
+- `VERIFICATION_MODE=manual` (never `mock`)
+- `UPLOAD_DIR` a private disk path, not a public web root
 - `GEO_PROVIDER` (`osm` is acceptable until a commercial maps contract exists)
 - `CORS_ORIGINS` explicit origins, not `*`
 - `EXPO_PUBLIC_API_URL` HTTPS API

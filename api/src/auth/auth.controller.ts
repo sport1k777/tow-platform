@@ -16,7 +16,7 @@ export class AuthController {
 
   @Post('auth/otp/verify')
   verifyOtp(@Body() body: VerifyOtpDto) {
-    return this.authService.verifyOtp(body.phone, body.code);
+    return this.authService.verifyOtp(body.phone, body.code, body.role);
   }
 
   @Post('auth/refresh')

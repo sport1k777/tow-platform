@@ -14,7 +14,7 @@
 
 ## PRODUCTION REQUIRED (do not launch publicly without these)
 
-- [ ] Replace `SMS_PROVIDER=dev` with Twilio / Vonage / a Ukrainian SMS gateway
+- [ ] Set `AUTH_OTP_MODE=sms` (never `mock`) and replace `SMS_PROVIDER=dev` with Twilio / Vonage / a Ukrainian SMS gateway
 - [ ] Replace `NOTIFICATION_PROVIDER=dev` with push (APNs/FCM) and optional email/WhatsApp
 - [ ] Decide production maps: keep OSM or add Google/Mapbox keys + ToS/billing
 - [ ] TLS everywhere; rotate `JWT_SECRET`; disable `CORS_ORIGINS=*`
@@ -24,7 +24,7 @@
 - [ ] Privacy policy, user terms, App Store / Play listing
 - [ ] Production EAS/iOS certificates and a store build (not a dev client)
 - [ ] Crash/analytics (optional, paid) after legal review
-- [ ] Driver KYC if regulators or insurers require it
+- [ ] Connect an external document verification/OCR provider if required; the current flow is authenticated upload + manual admin review (documents are never auto-approved)
 - [ ] Real-time location transport (WebSocket) if live tracking is a launch promise
 - [ ] Load test matching + order accept under concurrent drivers
 

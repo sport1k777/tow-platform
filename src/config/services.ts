@@ -15,7 +15,7 @@ export function isServiceKey(value: string | undefined): value is ServiceKey {
   return serviceKeys.includes(value as ServiceKey);
 }
 
-export const vehicleCategories = ['car', 'suv', 'van', 'motorcycle'] as const;
+export const vehicleCategories = ['car', 'suv', 'van', 'truck', 'motorcycle'] as const;
 
 export type VehicleCategory = (typeof vehicleCategories)[number];
 

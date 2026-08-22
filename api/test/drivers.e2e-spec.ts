@@ -3,6 +3,7 @@ import 'dotenv/config';
 
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { eq } from 'drizzle-orm';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 
@@ -13,6 +14,7 @@ import { loadEnv } from '../src/config/env';
 import type { Database } from '../src/db/database.module';
 import { DATABASE } from '../src/db/database.tokens';
 import {
+  driverDocuments,
   driverProfiles,
   driverVehicles,
   geographyFromLngLat,
@@ -61,13 +63,32 @@ describe('Drivers presence (e2e)', () => {
       lastLocation: geographyFromLngLat(30.52, 50.45),
       lastSeenAt: new Date(),
     });
+    await db.update(users).set({ firstName: 'Тест', lastName: 'Водій' }).where(eq(users.id, user.id));
     await db.insert(driverVehicles).values({
       driverUserId: user.id,
       vehicleCategory: 'car',
       plateNumber: 'AA0002TO',
       services: ['tow'],
       active: true,
+      approved: true,
     });
+    for (const type of [
+      'drivers_license',
+      'identity',
+      'vehicle_registration',
+      'insurance',
+    ] as const) {
+      await db.insert(driverDocuments).values({
+        driverUserId: user.id,
+        type,
+        storageKey: `documents/${user.id}-${type}.png`,
+        mimeType: 'image/png',
+        byteSize: 32,
+        status: 'approved',
+        verificationMethod: 'manual_review',
+        verifiedAt: new Date(),
+      });
+    }
     const token = signHs256Jwt({ sub: user.id, roles: ['driver'] }, env.JWT_SECRET, 900);
 
     const online = await request(app.getHttpServer())

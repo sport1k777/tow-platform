@@ -6,6 +6,8 @@ import { OsmGeoProvider } from './osm-geo.provider';
 export function createGeoProvider(): GeoProvider {
   const env = loadEnv();
 
+  // GEO_PROVIDER=dev uses DevGeoProvider (mock catalog). osm is the next adapter.
+  // A Google/Mapbox provider can be added here later without changing booking screens.
   switch (env.GEO_PROVIDER) {
     case 'dev':
       return new DevGeoProvider();

@@ -10,6 +10,7 @@ import {
 } from 'class-validator';
 
 import { serviceKeyEnum, vehicleCategoryEnum } from '../db/schema';
+import { pickupSources } from '../geo/pickup-source';
 
 export class QuoteLocationDto {
   @Type(() => Number)
@@ -23,6 +24,10 @@ export class QuoteLocationDto {
   @IsString()
   @MinLength(1)
   label!: string;
+
+  @IsOptional()
+  @IsIn([...pickupSources])
+  source?: (typeof pickupSources)[number];
 }
 
 export class CreateQuoteDto {

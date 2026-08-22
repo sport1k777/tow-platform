@@ -34,6 +34,10 @@ yarn-error.*
 .env*.local
 api/.env
 
+# private driver documents and avatars (never commit)
+uploads/
+api/uploads/
+
 # typescript
 *.tsbuildinfo
 

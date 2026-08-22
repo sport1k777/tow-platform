@@ -5,18 +5,30 @@ export type DriverMe = {
   userId: string;
   phone: string | null;
   displayName: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  hasAvatar: boolean;
   verificationStatus: string;
   isOnline: boolean;
   availability: 'offline' | 'online' | 'busy' | 'suspended';
   completedOrdersCount: number;
   rating: number | null;
+  canGoOnline: boolean;
+  blockers: string[];
+  verificationMode?: 'manual' | 'mock';
+  mockMode?: boolean;
+  providerConfigured?: boolean;
   vehicles: {
     id: string;
     vehicleCategory: string;
+    make: string | null;
+    model: string | null;
+    year: number | null;
     plateNumber: string | null;
     capacityKg: number | null;
     services: string[];
     active: boolean;
+    approved: boolean;
   }[];
 };
 

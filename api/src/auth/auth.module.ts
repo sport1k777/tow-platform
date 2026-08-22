@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { FilesModule } from '../files/files.module';
 import { createSmsProvider } from '../sms/create-sms-provider';
 import { SMS_PROVIDER } from '../sms/sms.provider';
 import { UsersController } from '../users/users.controller';
@@ -10,6 +11,7 @@ import { JwtAuthGuard } from './jwt-auth.guard';
 import { RolesGuard } from './roles.guard';
 
 @Module({
+  imports: [FilesModule],
   controllers: [AuthController, UsersController],
   providers: [
     AuthService,

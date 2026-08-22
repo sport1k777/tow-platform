@@ -61,6 +61,7 @@ describe('Auth (e2e)', () => {
 
     expect(requested.status).toBe(201);
     expect(requested.body.devCode).toHaveLength(env.OTP_LENGTH);
+    expect(requested.body.otpMode).toBe('mock');
 
     const verified = await request(app.getHttpServer())
       .post('/auth/otp/verify')
@@ -197,5 +198,78 @@ describe('Auth (e2e)', () => {
       .post('/auth/otp/verify')
       .send({ phone: attemptsPhone, code: second.body.devCode });
     expect(afterLock.status).toBe(429);
+  });
+
+  it('registers a driver role on verify and leaves unverified drivers pending', async () => {
+    const phone = uniqueUaPhone();
+    const requested = await request(app.getHttpServer())
+      .post('/auth/otp/request')
+      .send({ phone });
+
+    const verified = await request(app.getHttpServer())
+      .post('/auth/otp/verify')
+      .send({ phone, code: requested.body.devCode, role: 'driver' });
+
+    expect(verified.status).toBe(201);
+
+    const me = await request(app.getHttpServer())
+      .get('/me')
+      .set('Authorization', `Bearer ${verified.body.accessToken}`);
+
+    expect(me.status).toBe(200);
+    expect(me.body.roles).toEqual(expect.arrayContaining(['customer', 'driver']));
+    expect(me.body.roles).not.toContain('admin');
+    expect(me.body.canUseDriverMode).toBe(true);
+
+    const driverMe = await request(app.getHttpServer())
+      .get('/drivers/me')
+      .set('Authorization', `Bearer ${verified.body.accessToken}`);
+
+    expect(driverMe.status).toBe(200);
+    expect(driverMe.body.verificationStatus).toBe('incomplete');
+
+    const presence = await request(app.getHttpServer())
+      .post('/drivers/me/presence')
+      .set('Authorization', `Bearer ${verified.body.accessToken}`)
+      .send({ online: true, lat: 50.45, lng: 30.52 });
+    expect(presence.status).toBe(403);
+  });
+
+  it('keeps an existing driver role when the same phone logs in as a customer', async () => {
+    const phone = uniqueUaPhone();
+    const firstRequest = await request(app.getHttpServer())
+      .post('/auth/otp/request')
+      .send({ phone });
+    await request(app.getHttpServer())
+      .post('/auth/otp/verify')
+      .send({ phone, code: firstRequest.body.devCode, role: 'driver' });
+
+    const secondRequest = await request(app.getHttpServer())
+      .post('/auth/otp/request')
+      .send({ phone });
+    const asCustomer = await request(app.getHttpServer())
+      .post('/auth/otp/verify')
+      .send({ phone, code: secondRequest.body.devCode, role: 'customer' });
+
+    const me = await request(app.getHttpServer())
+      .get('/me')
+      .set('Authorization', `Bearer ${asCustomer.body.accessToken}`);
+
+    expect(me.status).toBe(200);
+    expect(me.body.roles).toEqual(expect.arrayContaining(['customer', 'driver']));
+    expect(me.body.canUseDriverMode).toBe(true);
+  });
+
+  it('rejects admin as a self-serve verify role', async () => {
+    const phone = uniqueUaPhone();
+    const requested = await request(app.getHttpServer())
+      .post('/auth/otp/request')
+      .send({ phone });
+
+    const verified = await request(app.getHttpServer())
+      .post('/auth/otp/verify')
+      .send({ phone, code: requested.body.devCode, role: 'admin' });
+
+    expect(verified.status).toBe(400);
   });
 });

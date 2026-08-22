@@ -17,16 +17,22 @@ export type MeResponse = {
 };
 
 export function requestOtp(phone: string) {
-  return apiRequest<{ sent: true; expiresIn: number; devCode?: string }>(
-    '/auth/otp/request',
-    { method: 'POST', body: { phone } },
-  );
+  return apiRequest<{
+    sent: true;
+    expiresIn: number;
+    otpMode?: 'mock';
+    devCode?: string;
+  }>('/auth/otp/request', { method: 'POST', body: { phone } });
 }
 
-export function verifyOtp(phone: string, code: string) {
+export function verifyOtp(
+  phone: string,
+  code: string,
+  role: 'customer' | 'driver' = 'customer',
+) {
   return apiRequest<TokenPair>('/auth/otp/verify', {
     method: 'POST',
-    body: { phone, code },
+    body: { phone, code, role },
   });
 }
 

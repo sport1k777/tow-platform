@@ -4,17 +4,32 @@ import type { ServiceKey, VehicleCategory } from '@/config/services';
 
 export type QuoteLocation = GeoPlace;
 
+export type QuoteBreakdownLine = {
+  code: string;
+  label: string;
+  amountKopiyky: number;
+};
+
 export type QuoteResponse = {
   id: string;
   serviceKey: ServiceKey;
   vehicleCategory: VehicleCategory | null;
   pickup: QuoteLocation;
   destination: QuoteLocation | null;
+  pickupLatitude?: number;
+  pickupLongitude?: number;
+  pickupAddress?: string;
+  pickupSource?: string;
   distanceMeters: number;
   durationSeconds: number;
   amountKopiyky: number;
   currency: 'UAH' | string;
   expiresAt: string;
+  breakdown?: {
+    cityCode: string | null;
+    lines: QuoteBreakdownLine[];
+    totalKopiyky: number;
+  };
 };
 
 export type CreateQuoteInput = {

@@ -1,326 +1,552 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useEffect, useMemo, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 
 import { createOrder } from '@/api/orders';
 import { createQuote, type QuoteResponse } from '@/api/quotes';
+import { BookingSummary, type SummaryRow } from '@/booking/BookingSummary';
+import { ChoiceList } from '@/booking/ChoiceList';
+import { detailsCopy, destinationRequiredFor } from '@/booking/flow';
 import {
-  isServiceKey,
-  vehicleCategories,
-  type VehicleCategory,
-} from '@/config/services';
-import { copy } from '@/copy/uk';
-import { formatRouteSummary, formatUah } from '@/format/money';
-import { parsePlaceParam } from '@/navigation/params';
+  cargoClassLabel,
+  cargoClasses,
+  cargoKindLabel,
+  cargoKinds,
+  evacuatorVehicleLabel,
+  evacuatorVehicles,
+  moverCountLabel,
+  moverCounts,
+  movingVolumeLabel,
+  movingVolumes,
+  movingWhatLabel,
+  movingWhats,
+  roadsideProblemLabel,
+  roadsideProblems,
+  toApiVehicle,
+  yesNo,
+  yesNoLabel,
+  type CargoClass,
+  type CargoKind,
+  type EvacuatorVehicle,
+  type MoverCount,
+  type MovingVolume,
+  type MovingWhat,
+  type RoadsideProblem,
+  type YesNo,
+} from '@/booking/options';
+import { PaymentFields } from '@/booking/PaymentFields';
+import { bookingTypeForService } from '@/booking/serviceType';
+import { isServiceKey } from '@/config/services';
+import {
+  confirmOrderLabel,
+  copy,
+  paymentMethodLabel,
+  paymentStatusLabel,
+} from '@/copy/uk';
+import { formatDistanceKm, formatEta, formatUah } from '@/format/money';
+import { mapProvider } from '@/maps/provider';
+import { firstParam, parsePlaceParam } from '@/navigation/params';
+import { paymentProvider } from '@/payments/create-payment-provider';
+import type { PaymentMethod } from '@/payments/types';
 import { useSession } from '@/session';
-import { colors } from '@/theme';
+import { colors, space } from '@/theme';
+import { AppText, Button, NavBack, Screen, TextField, userFacingError } from '@/ui';
 
-const vehicleLabels: Record<VehicleCategory, string> = {
-  car: copy.vehicleCar,
-  suv: copy.vehicleSuv,
-  van: copy.vehicleVan,
-  motorcycle: copy.vehicleMotorcycle,
-};
+function isCargoKind(value: string | undefined): value is CargoKind {
+  return cargoKinds.includes(value as CargoKind);
+}
 
 export default function CustomerDetailsScreen() {
   const params = useLocalSearchParams<{
     service?: string;
     pickup?: string;
     destination?: string;
+    cargoKind?: string;
   }>();
   const { authed } = useSession();
   const serviceKey = isServiceKey(params.service) ? params.service : 'tow';
+  const bookingType = bookingTypeForService(serviceKey);
+  const heading = detailsCopy(bookingType);
   const pickup = useMemo(() => parsePlaceParam(params.pickup), [params.pickup]);
   const destination = useMemo(
     () => parsePlaceParam(params.destination),
     [params.destination],
   );
-  const categoryRequired = serviceKey === 'tow';
+  const destinationRequired = destinationRequiredFor(bookingType);
+  const rawCargo = firstParam(params.cargoKind);
+  const cargoFromRoute = isCargoKind(rawCargo) ? rawCargo : null;
 
-  const [vehicleCategory, setVehicleCategory] = useState<VehicleCategory | null>(
-    categoryRequired ? 'car' : null,
-  );
+  const [vehicle, setVehicle] = useState<EvacuatorVehicle | null>(null);
+  const [cargoKind, setCargoKind] = useState<CargoKind | null>(cargoFromRoute);
+  const [cargoClass, setCargoClass] = useState<CargoClass | null>(null);
+  const [movingWhat, setMovingWhat] = useState<MovingWhat | null>(null);
+  const [movingVolume, setMovingVolume] = useState<MovingVolume | null>(null);
+  const [movers, setMovers] = useState<YesNo | null>(null);
+  const [moverCount, setMoverCount] = useState<MoverCount>(2);
+  const [lift, setLift] = useState<YesNo | null>(null);
+  const [floor, setFloor] = useState('');
+  const [blockedWheels, setBlockedWheels] = useState<YesNo | null>(null);
+  const [accident, setAccident] = useState<YesNo | null>(null);
+  const [roadProblem, setRoadProblem] = useState<RoadsideProblem | null>(null);
   const [notes, setNotes] = useState('');
   const [quote, setQuote] = useState<QuoteResponse | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function onRequestQuote() {
-    if (!pickup) {
-      setError(copy.requestError);
+  const readyForQuote =
+    Boolean(pickup) &&
+    (!destinationRequired || Boolean(destination)) &&
+    (bookingType === 'EVACUATOR'
+      ? Boolean(vehicle)
+      : bookingType === 'TRANSPORT'
+        ? Boolean(cargoKind && cargoClass)
+        : bookingType === 'MOVING'
+          ? Boolean(movingWhat && movingVolume && movers && lift)
+          : Boolean(roadProblem));
+
+  const detailsPayload = useMemo(() => {
+    const payload: Record<string, unknown> = {
+      serviceType: bookingType,
+    };
+    if (pickup?.source) {
+      payload.pickupSource = pickup.source;
+    }
+    if (notes.trim()) {
+      payload.notes = notes.trim();
+    }
+    if (bookingType === 'EVACUATOR' && vehicle) {
+      payload.towVehicle = vehicle;
+      if (blockedWheels) {
+        payload.blockedWheels = blockedWheels === 'yes';
+      }
+      if (accident) {
+        payload.accident = accident === 'yes';
+      }
+    }
+    if (bookingType === 'TRANSPORT') {
+      if (cargoKind) {
+        payload.cargoKind = cargoKind;
+      }
+      if (cargoClass) {
+        payload.cargoClass = cargoClass;
+      }
+    }
+    if (bookingType === 'MOVING') {
+      if (movingWhat) {
+        payload.movingWhat = movingWhat;
+      }
+      if (movingVolume) {
+        payload.movingVolume = movingVolume;
+      }
+      if (movers) {
+        payload.movers = movers === 'yes';
+        if (movers === 'yes') {
+          payload.moverCount = moverCount;
+        }
+      }
+      if (lift) {
+        payload.lift = lift === 'yes';
+      }
+      if (floor.trim()) {
+        payload.floor = Number.parseInt(floor.trim(), 10) || floor.trim();
+      }
+    }
+    if (bookingType === 'ROAD_ASSISTANCE' && roadProblem) {
+      payload.roadsideProblem = roadProblem;
+    }
+    return payload;
+  }, [
+    bookingType,
+    accident,
+    blockedWheels,
+    cargoClass,
+    cargoKind,
+    floor,
+    lift,
+    moverCount,
+    movers,
+    movingVolume,
+    movingWhat,
+    notes,
+    pickup,
+    roadProblem,
+    vehicle,
+  ]);
+
+  useEffect(() => {
+    if (!readyForQuote || !pickup) {
       return;
     }
-    if (categoryRequired && !vehicleCategory) {
-      setError(copy.requestError);
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      const next = await authed((token) =>
+
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      setBusy(true);
+      setError(null);
+      void authed((token) =>
         createQuote(
           {
             serviceKey,
             pickup,
             destination: destination ?? undefined,
-            vehicleCategory: vehicleCategory ?? undefined,
-            details: notes.trim() ? { notes: notes.trim() } : undefined,
+            vehicleCategory: toApiVehicle(vehicle),
+            details: detailsPayload,
           },
           token,
         ),
-      );
-      setQuote(next);
-    } catch (caught) {
-      setQuote(null);
-      setError(caught instanceof Error ? caught.message : copy.requestError);
-    } finally {
-      setBusy(false);
-    }
-  }
+      )
+        .then((next) => {
+          if (!cancelled) {
+            setQuote(next);
+          }
+        })
+        .catch((caught) => {
+          if (!cancelled) {
+            setQuote(null);
+            setError(userFacingError(caught));
+          }
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setBusy(false);
+          }
+        });
+    },     notes.trim() ? 400 : 0);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [authed, destination, detailsPayload, notes, pickup, readyForQuote, serviceKey, vehicle]);
 
   async function onConfirmOrder() {
     if (!quote) {
       return;
     }
+    if (!paymentMethod) {
+      setError(copy.paymentRequired);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      const order = await authed((token) => createOrder(quote.id, token));
+      const checkout = await paymentProvider.checkout({
+        method: paymentMethod,
+        amountKopiyky: quote.amountKopiyky,
+        currency: quote.currency,
+      });
+      const order = await authed((token) =>
+        createOrder(quote.id, token, checkout.method),
+      );
       router.replace({
-        pathname: './order/[id]',
+        pathname: '/customer/order/[id]',
         params: { id: order.id },
       });
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : copy.requestError);
+      setError(userFacingError(caught));
     } finally {
       setBusy(false);
     }
   }
 
-  return (
-    <SafeAreaView style={styles.safe}>
-      <View style={styles.container}>
-        <Text style={styles.brand}>{copy.appName}</Text>
-        <Text style={styles.title}>{copy.detailsTitle}</Text>
-        <Text style={styles.subtitle}>{copy.detailsSubtitle}</Text>
+  const summaryRows = useMemo((): SummaryRow[] => {
+    const rows: SummaryRow[] = [];
+    if (pickup) {
+      rows.push({ label: copy.pickupLabel, value: pickup.label });
+    }
+    if (destination) {
+      rows.push({ label: copy.destinationLabel, value: destination.label });
+    }
+    if (bookingType === 'TRANSPORT' && cargoKind) {
+      rows.push({ label: copy.cargoKindLabel, value: cargoKindLabel(cargoKind) });
+    }
+    if (bookingType === 'MOVING' && movingWhat) {
+      rows.push({ label: copy.movingWhatLabel, value: movingWhatLabel(movingWhat) });
+    }
+    if (notes.trim()) {
+      rows.push({ label: copy.summaryNotes, value: notes.trim() });
+    }
+    if (quote) {
+      if (quote.breakdown?.lines.length) {
+        rows.push({ label: copy.quotePriceTitle, value: '' });
+        for (const item of quote.breakdown.lines) {
+          rows.push({
+            label: item.label,
+            value: formatUah(item.amountKopiyky),
+            emphasize: item.code === 'total',
+          });
+        }
+      } else {
+        if (quote.distanceMeters > 0) {
+          rows.push({ label: copy.distanceLabel, value: formatDistanceKm(quote.distanceMeters) });
+        }
+        if (quote.durationSeconds > 0) {
+          rows.push({ label: copy.etaLabel, value: formatEta(quote.durationSeconds) });
+        }
+        rows.push({
+          label: copy.estimatedPriceLabel,
+          value: formatUah(quote.amountKopiyky),
+          emphasize: true,
+        });
+      }
+      if (paymentMethod) {
+        rows.push({
+          label: copy.paymentTitle,
+          value: `${paymentMethodLabel(paymentMethod)}${
+            paymentProvider.mock
+              ? ` · ${paymentStatusLabel(paymentMethod === 'cash' ? 'cash' : 'mock_authorized')}`
+              : ''
+          }`,
+        });
+      }
+    }
+    return rows;
+  }, [
+    bookingType,
+    cargoKind,
+    destination,
+    movingWhat,
+    notes,
+    paymentMethod,
+    pickup,
+    quote,
+  ]);
 
-        <View style={styles.card}>
-          <Text style={styles.cardLabel}>{copy.pickupLabel}</Text>
-          <Text style={styles.cardTitle}>{pickup?.label ?? '—'}</Text>
-          {destination ? (
+  return (
+    <Screen
+      keyboard
+      scroll
+      footer={
+        quote ? (
+          <View style={styles.footer}>
+            <Button
+              label={confirmOrderLabel(quote.amountKopiyky)}
+              loading={busy}
+              disabled={busy || !paymentMethod}
+              onPress={() => void onConfirmOrder()}
+            />
+          </View>
+        ) : null
+      }
+    >
+      <NavBack />
+      <AppText variant="hero">{heading.title}</AppText>
+      <AppText variant="body" color={colors.muted} style={styles.subtitle}>
+        {heading.subtitle}
+      </AppText>
+      {mapProvider.mock ? (
+        <AppText variant="caption" color={colors.warning} style={styles.devBanner}>
+          {copy.devQuoteBanner}
+        </AppText>
+      ) : null}
+
+      {bookingType === 'EVACUATOR' ? (
+        <>
+          <ChoiceList
+            options={evacuatorVehicles.map((value) => ({
+              value,
+              label: evacuatorVehicleLabel(value),
+            }))}
+            value={vehicle}
+            onChange={(value) => {
+              setVehicle(value);
+              setQuote(null);
+              setBusy(true);
+            }}
+          />
+          <AppText variant="caption" color={colors.muted} style={styles.fieldLabel}>
+            {copy.blockedWheelsLabel}
+          </AppText>
+          <ChoiceList
+            options={yesNo.map((value) => ({ value, label: yesNoLabel(value) }))}
+            value={blockedWheels}
+            onChange={(value) => {
+              setBlockedWheels(value);
+              setQuote(null);
+            }}
+          />
+          <AppText variant="caption" color={colors.muted} style={styles.fieldLabel}>
+            {copy.accidentLabel}
+          </AppText>
+          <ChoiceList
+            options={yesNo.map((value) => ({ value, label: yesNoLabel(value) }))}
+            value={accident}
+            onChange={(value) => {
+              setAccident(value);
+              setQuote(null);
+            }}
+          />
+        </>
+      ) : null}
+
+      {bookingType === 'TRANSPORT' ? (
+        <>
+          {!cargoFromRoute ? (
+            <ChoiceList
+              options={cargoKinds.map((value) => ({ value, label: cargoKindLabel(value) }))}
+              value={cargoKind}
+              onChange={(value) => {
+                setCargoKind(value);
+                setQuote(null);
+                setBusy(true);
+              }}
+            />
+          ) : null}
+          <AppText variant="caption" color={colors.muted} style={styles.fieldLabel}>
+            {copy.cargoClassLabel}
+          </AppText>
+          <ChoiceList
+            options={cargoClasses.map((value) => ({ value, label: cargoClassLabel(value) }))}
+            value={cargoClass}
+            onChange={(value) => {
+              setCargoClass(value);
+              setQuote(null);
+              setBusy(true);
+            }}
+          />
+        </>
+      ) : null}
+
+      {bookingType === 'MOVING' ? (
+        <>
+          <AppText variant="caption" color={colors.muted} style={styles.fieldLabel}>
+            {copy.movingWhatLabel}
+          </AppText>
+          <ChoiceList
+            options={movingWhats.map((value) => ({ value, label: movingWhatLabel(value) }))}
+            value={movingWhat}
+            onChange={(value) => {
+              setMovingWhat(value);
+              setQuote(null);
+            }}
+          />
+          <AppText variant="caption" color={colors.muted} style={styles.fieldLabel}>
+            {copy.movingVolumeLabel}
+          </AppText>
+          <ChoiceList
+            options={movingVolumes.map((value) => ({ value, label: movingVolumeLabel(value) }))}
+            value={movingVolume}
+            onChange={setMovingVolume}
+          />
+          <AppText variant="caption" color={colors.muted} style={styles.fieldLabel}>
+            {copy.movingMoversLabel}
+          </AppText>
+          <ChoiceList
+            options={yesNo.map((value) => ({ value, label: yesNoLabel(value) }))}
+            value={movers}
+            onChange={(value) => {
+              setMovers(value);
+              setQuote(null);
+            }}
+          />
+          {movers === 'yes' ? (
             <>
-              <Text style={[styles.cardLabel, styles.cardSpacer]}>{copy.destinationLabel}</Text>
-              <Text style={styles.cardTitle}>{destination.label}</Text>
+              <AppText variant="caption" color={colors.muted} style={styles.fieldLabel}>
+                {copy.moversCountLabel}
+              </AppText>
+              <ChoiceList
+                options={moverCounts.map((value) => ({
+                  value: String(value),
+                  label: moverCountLabel(value),
+                }))}
+                value={String(moverCount)}
+                onChange={(value) => {
+                  setMoverCount(Number(value) === 4 ? 4 : 2);
+                  setQuote(null);
+                }}
+              />
             </>
           ) : null}
-        </View>
+          <AppText variant="caption" color={colors.muted} style={styles.fieldLabel}>
+            {copy.movingLiftLabel}
+          </AppText>
+          <ChoiceList
+            options={yesNo.map((value) => ({ value, label: yesNoLabel(value) }))}
+            value={lift}
+            onChange={setLift}
+          />
+          <TextField
+            accessibilityLabel={copy.movingFloorPlaceholder}
+            placeholder={copy.movingFloorPlaceholder}
+            value={floor}
+            onChangeText={setFloor}
+            keyboardType="number-pad"
+            style={styles.floor}
+          />
+        </>
+      ) : null}
 
-        <View style={styles.grid}>
-          {vehicleCategories.map((category) => (
-            <Pressable
-              key={category}
-              accessibilityRole="button"
-              accessibilityLabel={vehicleLabels[category]}
-              style={[
-                styles.tile,
-                vehicleCategory === category && styles.tileActive,
-              ]}
-              onPress={() => {
-                setVehicleCategory(category);
-                setQuote(null);
-              }}
-            >
-              <Text
-                style={[
-                  styles.tileTitle,
-                  vehicleCategory === category && styles.tileTitleActive,
-                ]}
-              >
-                {vehicleLabels[category]}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-
-        <TextInput
-          accessibilityLabel={copy.notesPlaceholder}
-          multiline
-          placeholder={copy.notesPlaceholder}
-          placeholderTextColor={colors.muted}
-          style={styles.notes}
-          value={notes}
-          onChangeText={(value) => {
-            setNotes(value);
+      {bookingType === 'ROAD_ASSISTANCE' ? (
+        <ChoiceList
+          options={roadsideProblems.map((value) => ({
+            value,
+            label: roadsideProblemLabel(value),
+          }))}
+          value={roadProblem}
+          onChange={(value) => {
+            setRoadProblem(value);
             setQuote(null);
+            setBusy(true);
           }}
         />
+      ) : null}
 
-        {quote ? (
-          <View style={styles.card}>
-            <Text style={styles.cardLabel}>{copy.quoteTitle}</Text>
-            <Text style={styles.price}>{formatUah(quote.amountKopiyky)}</Text>
-            <Text style={styles.cardTitle}>
-              {formatRouteSummary(quote.distanceMeters, quote.durationSeconds)}
-            </Text>
-            <Text style={styles.cardHint}>
-              {copy.quoteExpires}{' '}
-              {new Date(quote.expiresAt).toLocaleTimeString('uk-UA', {
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
-            </Text>
-          </View>
-        ) : null}
+      <TextField
+        accessibilityLabel={copy.notesPlaceholder}
+        multiline
+        placeholder={copy.notesPlaceholder}
+        value={notes}
+        onChangeText={setNotes}
+        style={styles.notes}
+      />
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+      {readyForQuote ? (
+        summaryRows.length > 0 ? (
+          <BookingSummary rows={summaryRows} />
+        ) : (
+          <AppText variant="caption" color={colors.muted} style={styles.loading}>
+            {copy.loading}
+          </AppText>
+        )
+      ) : null}
 
-        <Pressable
-          accessibilityRole="button"
-          disabled={busy || !pickup}
-          style={({ pressed }) => [
-            styles.primaryButton,
-            (busy || !pickup) && styles.disabled,
-            pressed && styles.pressed,
-          ]}
-          onPress={() => {
-            void (quote ? onConfirmOrder() : onRequestQuote());
-          }}
-        >
-          <Text style={styles.primaryLabel}>
-            {busy ? copy.loading : quote ? copy.confirmOrder : copy.requestQuote}
-          </Text>
-        </Pressable>
-      </View>
-    </SafeAreaView>
+      {quote ? <PaymentFields value={paymentMethod} onChange={setPaymentMethod} /> : null}
+
+      {error ? (
+        <AppText variant="caption" color={colors.error} style={styles.error}>
+          {error}
+        </AppText>
+      ) : null}
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  container: {
-    flex: 1,
-    paddingHorizontal: 20,
-    paddingTop: 12,
-  },
-  brand: {
-    color: colors.navy,
-    fontSize: 13,
-    fontWeight: '600',
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
-    marginBottom: 8,
-  },
-  title: {
-    color: colors.text,
-    fontSize: 28,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
   subtitle: {
-    color: colors.muted,
-    fontSize: 16,
-    lineHeight: 22,
-    marginBottom: 24,
+    marginTop: space.sm,
+    marginBottom: space.xl,
   },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 16,
-    marginBottom: 16,
+  devBanner: {
+    marginTop: -space.md,
+    marginBottom: space.lg,
   },
-  cardLabel: {
-    color: colors.muted,
-    fontSize: 13,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  cardSpacer: {
-    marginTop: 12,
-  },
-  cardTitle: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 16,
+  fieldLabel: {
+    marginBottom: space.sm,
   },
   notes: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 14,
-    borderWidth: 1,
-    color: colors.text,
-    fontSize: 16,
-    marginBottom: 16,
-    minHeight: 72,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    minHeight: 88,
     textAlignVertical: 'top',
   },
-  tile: {
-    width: '47.5%',
-    flexGrow: 1,
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    minHeight: 72,
-    borderWidth: 1,
-    borderColor: colors.border,
-    justifyContent: 'center',
+  floor: {
+    marginBottom: space.lg,
   },
-  tileActive: {
-    borderColor: colors.accent,
-    backgroundColor: '#FFF6F0',
-  },
-  tileTitle: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  tileTitleActive: {
-    color: colors.accent,
-  },
-  price: {
-    color: colors.navy,
-    fontSize: 28,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  cardHint: {
-    color: colors.muted,
-    fontSize: 14,
-    marginTop: 8,
+  loading: {
+    marginTop: space.lg,
   },
   error: {
-    color: colors.accent,
-    fontSize: 15,
-    marginBottom: 12,
+    marginTop: space.md,
   },
-  primaryButton: {
-    backgroundColor: colors.accent,
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
-  primaryLabel: {
-    color: colors.surface,
-    fontSize: 17,
-    fontWeight: '700',
-  },
-  disabled: {
-    opacity: 0.5,
-  },
-  pressed: {
-    opacity: 0.85,
+  footer: {
+    paddingHorizontal: space.xl,
   },
 });

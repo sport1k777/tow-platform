@@ -1,197 +1,123 @@
 import { router } from 'expo-router';
-import { useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { StyleSheet, View } from 'react-native';
 
-import {
-  formatLocalUa,
-  isCompleteUaMobile,
-  localDigitsFromInput,
-  toE164,
-  uaPhonePrefix,
-} from '@/phone/ua';
 import { copy } from '@/copy/uk';
-import { useSession } from '@/session';
-import { colors } from '@/theme';
+import { useSession, type AppMode } from '@/session';
+import { colors, radius, shadows, space } from '@/theme';
+import { AppText, BrandLogo, Icon, PressScale, Screen } from '@/ui';
 
-export default function AuthScreen() {
-  const { requestOtp, verifyOtp } = useSession();
-  const [phone, setPhone] = useState('');
-  const [code, setCode] = useState('');
-  const [codeSent, setCodeSent] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+export default function AuthRoleScreen() {
+  const { selectedRole, selectRole } = useSession();
 
-  async function onRequestCode() {
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await requestOtp(toE164(phone));
-      setCodeSent(true);
-      if (result.devCode) {
-        setCode(result.devCode);
-      }
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : copy.authError);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function onVerify() {
-    setBusy(true);
-    setError(null);
-    try {
-      await verifyOtp(toE164(phone), code);
-      router.replace('/customer');
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : copy.authError);
-    } finally {
-      setBusy(false);
-    }
+  async function openPhone(role: AppMode) {
+    const next: AppMode = role === 'driver' ? 'driver' : 'customer';
+    await selectRole(next);
+    router.replace({
+      pathname: '/phone',
+      params: { role: next },
+    });
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <View style={styles.container}>
-        <Text style={styles.brand}>{copy.appName}</Text>
-        <Text style={styles.title}>{copy.authTitle}</Text>
-        <Text style={styles.subtitle}>{copy.authSubtitle}</Text>
-
-        <Text style={styles.prefix}>{uaPhonePrefix}</Text>
-        <TextInput
-          accessibilityLabel={copy.phonePlaceholder}
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="number-pad"
-          maxLength={11}
-          placeholder={copy.phoneLocalHint}
-          placeholderTextColor={colors.muted}
-          style={styles.input}
-          value={formatLocalUa(phone)}
-          onChangeText={(value) => setPhone(localDigitsFromInput(value))}
-        />
-
-        {codeSent ? (
-          <TextInput
-            accessibilityLabel={copy.otpPlaceholder}
-            keyboardType="number-pad"
-            maxLength={6}
-            placeholder={copy.otpPlaceholder}
-            placeholderTextColor={colors.muted}
-            style={styles.input}
-            value={code}
-            onChangeText={setCode}
-          />
-        ) : null}
-
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-
-        <Pressable
-          accessibilityRole="button"
-          disabled={busy || (!codeSent && !isCompleteUaMobile(phone))}
-          style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
-          onPress={codeSent ? onVerify : onRequestCode}
-        >
-          <Text style={styles.primaryLabel}>
-            {codeSent ? copy.verifyCode : copy.requestCode}
-          </Text>
-        </Pressable>
-
-        {codeSent ? (
-          <Pressable
-            accessibilityRole="button"
-            disabled={busy}
-            style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
-            onPress={onRequestCode}
-          >
-            <Text style={styles.secondaryLabel}>{copy.resendCode}</Text>
-          </Pressable>
-        ) : null}
+    <Screen scroll>
+      <View style={styles.top}>
+        <BrandLogo size={56} labeled />
       </View>
-    </SafeAreaView>
+      <AppText variant="hero">{copy.roleTitle}</AppText>
+      <AppText variant="body" color={colors.secondary} style={styles.subtitle}>
+        {copy.roleSubtitle}
+      </AppText>
+
+      <PressScale
+        accessibilityRole="button"
+        accessibilityState={{ selected: selectedRole === 'customer' }}
+        accessibilityLabel={copy.roleCustomer}
+        onPress={() => void openPhone('customer')}
+        style={[styles.card, selectedRole === 'customer' && styles.cardSelected]}
+      >
+        <View style={styles.row}>
+          <View style={[styles.glyph, selectedRole === 'customer' && styles.glyphSelected]}>
+            <Icon name="user" color={colors.accent} size={26} />
+          </View>
+          <View style={styles.copy}>
+            <AppText variant="card">{copy.roleCustomer}</AppText>
+            <AppText variant="caption" color={colors.secondary}>
+              {copy.roleCustomerHint}
+            </AppText>
+          </View>
+          <Icon name="chevron" color={selectedRole === 'customer' ? colors.accent : colors.muted} />
+        </View>
+      </PressScale>
+
+      <PressScale
+        accessibilityRole="button"
+        accessibilityState={{ selected: selectedRole === 'driver' }}
+        accessibilityLabel={copy.roleDriver}
+        onPress={() => void openPhone('driver')}
+        style={[styles.card, selectedRole === 'driver' && styles.cardSelected]}
+      >
+        <View style={styles.row}>
+          <View style={[styles.glyph, selectedRole === 'driver' && styles.glyphSelected]}>
+            <Icon name="driver" color={colors.accent} size={26} />
+          </View>
+          <View style={styles.copy}>
+            <AppText variant="card">{copy.roleDriver}</AppText>
+            <AppText variant="caption" color={colors.secondary}>
+              {copy.roleDriverHint}
+            </AppText>
+          </View>
+          <Icon name="chevron" color={selectedRole === 'driver' ? colors.accent : colors.muted} />
+        </View>
+      </PressScale>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-  },
-  brand: {
-    color: colors.navy,
-    fontSize: 15,
-    fontWeight: '600',
-    letterSpacing: 0.4,
-    marginBottom: 12,
-    textTransform: 'uppercase',
-  },
-  title: {
-    color: colors.text,
-    fontSize: 32,
-    fontWeight: '700',
-    lineHeight: 38,
-    marginBottom: 12,
+  top: {
+    marginBottom: space.giant,
+    alignItems: 'flex-start',
   },
   subtitle: {
-    color: colors.muted,
-    fontSize: 17,
-    lineHeight: 24,
-    marginBottom: 36,
+    marginTop: space.sm,
+    marginBottom: space.xxxl,
   },
-  prefix: {
-    color: colors.navy,
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  input: {
-    backgroundColor: colors.surface,
+  card: {
+    backgroundColor: colors.card,
     borderColor: colors.border,
-    borderRadius: 14,
     borderWidth: 1,
-    color: colors.text,
-    fontSize: 17,
-    marginBottom: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
+    borderRadius: radius.xl,
+    padding: space.lg,
+    marginBottom: space.md,
+    minHeight: 108,
+    justifyContent: 'center',
   },
-  error: {
-    color: colors.accent,
-    fontSize: 15,
-    marginBottom: 12,
+  cardSelected: {
+    borderColor: colors.accent,
+    ...shadows.glow,
   },
-  primaryButton: {
-    backgroundColor: colors.accent,
-    borderRadius: 14,
-    paddingVertical: 16,
+  row: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: space.lg,
+    width: '100%',
   },
-  primaryLabel: {
-    color: colors.surface,
-    fontSize: 17,
-    fontWeight: '700',
-  },
-  secondaryButton: {
-    marginTop: 12,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    paddingVertical: 16,
+  glyph: {
+    width: 52,
+    height: 52,
+    borderRadius: radius.md,
+    backgroundColor: colors.elevated,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  secondaryLabel: {
-    color: colors.navy,
-    fontSize: 16,
-    fontWeight: '600',
+  glyphSelected: {
+    backgroundColor: colors.accentWash,
   },
-  pressed: {
-    opacity: 0.85,
+  copy: {
+    flex: 1,
+    flexShrink: 1,
+    minWidth: 0,
+    gap: 6,
+    justifyContent: 'center',
   },
 });

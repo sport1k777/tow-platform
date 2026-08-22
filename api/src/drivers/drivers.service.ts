@@ -17,13 +17,17 @@ import {
   users,
 } from '../db/schema';
 import { ACTIVE_JOB_STATUSES } from '../orders/order-state';
+import { DocumentsService } from '../verification/documents.service';
 import type { PresenceDto } from './dto';
 
 export type DriverAvailability = 'offline' | 'online' | 'busy' | 'suspended';
 
 @Injectable()
 export class DriversService {
-  constructor(@Inject(DATABASE) private readonly db: Database) {}
+  constructor(
+    @Inject(DATABASE) private readonly db: Database,
+    @Inject(DocumentsService) private readonly documents: DocumentsService,
+  ) {}
 
   async getMe(user: AccessPayload) {
     const profile = await this.requireProfile(user.sub);
@@ -31,6 +35,9 @@ export class DriversService {
       .select({
         phone: users.phone,
         displayName: users.displayName,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        avatarStorageKey: users.avatarStorageKey,
       })
       .from(users)
       .where(eq(users.id, user.sub))
@@ -40,14 +47,21 @@ export class DriversService {
       .from(driverVehicles)
       .where(eq(driverVehicles.driverUserId, user.sub));
     const busy = await this.hasActiveJob(user.sub);
+    const eligibility = await this.documents.evaluateEligibility(user.sub);
     return {
       userId: user.sub,
       phone: person?.phone ?? null,
       displayName: person?.displayName ?? null,
+      firstName: person?.firstName ?? null,
+      lastName: person?.lastName ?? null,
+      hasAvatar: Boolean(person?.avatarStorageKey),
       verificationStatus: profile.verificationStatus,
       isOnline: profile.isOnline,
       availability: this.availability(profile, busy),
       completedOrdersCount: profile.completedOrdersCount,
+      canGoOnline: eligibility.canGoOnline,
+      blockers: eligibility.blockers,
+      ...this.documents.verificationMeta(),
       rating:
         profile.ratingCount === 0
           ? null
@@ -56,10 +70,14 @@ export class DriversService {
       vehicles: vehicles.map((vehicle) => ({
         id: vehicle.id,
         vehicleCategory: vehicle.vehicleCategory,
+        make: vehicle.make,
+        model: vehicle.model,
+        year: vehicle.year,
         plateNumber: vehicle.plateNumber,
         capacityKg: vehicle.capacityKg,
         services: vehicle.services,
         active: vehicle.active,
+        approved: vehicle.approved,
       })),
     };
   }
@@ -69,8 +87,8 @@ export class DriversService {
     if (profile.verificationStatus === 'suspended') {
       throw new ForbiddenException('Driver is suspended');
     }
-    if (profile.verificationStatus !== 'approved') {
-      throw new ForbiddenException('Driver is not approved');
+    if (body.online) {
+      await this.documents.assertCanGoOnline(user.sub);
     }
 
     const online = body.online ?? profile.isOnline;
@@ -95,7 +113,10 @@ export class DriversService {
       .select({
         userId: driverProfiles.userId,
         displayName: users.displayName,
+        firstName: users.firstName,
+        lastName: users.lastName,
         phone: users.phone,
+        avatarStorageKey: users.avatarStorageKey,
         verificationStatus: driverProfiles.verificationStatus,
         completedOrdersCount: driverProfiles.completedOrdersCount,
         ratingSum: driverProfiles.ratingSum,
@@ -117,6 +138,9 @@ export class DriversService {
     return {
       userId: row.userId,
       displayName: row.displayName,
+      firstName: row.firstName,
+      lastName: row.lastName,
+      hasAvatar: Boolean(row.avatarStorageKey),
       phone: row.phone,
       verificationStatus: row.verificationStatus,
       completedOrdersCount: row.completedOrdersCount,
@@ -127,6 +151,9 @@ export class DriversService {
       vehicle: vehicle
         ? {
             vehicleCategory: vehicle.vehicleCategory,
+            make: vehicle.make,
+            model: vehicle.model,
+            year: vehicle.year,
             plateNumber: vehicle.plateNumber,
             capacityKg: vehicle.capacityKg,
             services: vehicle.services,

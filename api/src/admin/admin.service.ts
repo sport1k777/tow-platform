@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, count, desc, eq } from 'drizzle-orm';
+import { and, count, desc, eq, isNull } from 'drizzle-orm';
 
 import { DATABASE } from '../db/database.tokens';
 import type { Database } from '../db/database.module';
@@ -17,11 +17,16 @@ import {
   InvalidOrderTransitionError,
   type OrderStatus,
 } from '../orders/order-state';
+import { DocumentsService } from '../verification/documents.service';
+import { defaultTariffConfig, parseTariffConfig } from '../pricing/types';
 import type { AdminDriverStatusDto, AdminOrderStatusDto, AdminPricingDto } from './dto';
 
 @Injectable()
 export class AdminService {
-  constructor(@Inject(DATABASE) private readonly db: Database) {}
+  constructor(
+    @Inject(DATABASE) private readonly db: Database,
+    @Inject(DocumentsService) private readonly documents: DocumentsService,
+  ) {}
 
   async stats() {
     const [orderCount] = await this.db.select({ value: count() }).from(orders);
@@ -103,6 +108,9 @@ export class AdminService {
         userId: driverProfiles.userId,
         phone: users.phone,
         displayName: users.displayName,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        avatarStorageKey: users.avatarStorageKey,
         verificationStatus: driverProfiles.verificationStatus,
         isOnline: driverProfiles.isOnline,
         completedOrdersCount: driverProfiles.completedOrdersCount,
@@ -110,29 +118,28 @@ export class AdminService {
       .from(driverProfiles)
       .innerJoin(users, eq(users.id, driverProfiles.userId))
       .orderBy(desc(driverProfiles.createdAt));
-    return { items: rows };
+    return {
+      items: rows.map((row) => ({
+        userId: row.userId,
+        phone: row.phone,
+        displayName: row.displayName,
+        firstName: row.firstName,
+        lastName: row.lastName,
+        hasAvatar: Boolean(row.avatarStorageKey),
+        verificationStatus: row.verificationStatus,
+        isOnline: row.isOnline,
+        completedOrdersCount: row.completedOrdersCount,
+      })),
+    };
   }
 
-  async setDriverStatus(userId: string, body: AdminDriverStatusDto) {
-    const [profile] = await this.db
-      .select()
-      .from(driverProfiles)
-      .where(eq(driverProfiles.userId, userId))
-      .limit(1);
-    if (!profile) {
-      throw new NotFoundException('Driver not found');
-    }
-    const forceOffline =
-      body.verificationStatus === 'suspended' || body.verificationStatus === 'rejected';
-    await this.db
-      .update(driverProfiles)
-      .set({
-        verificationStatus: body.verificationStatus,
-        isOnline: forceOffline ? false : profile.isOnline,
-        updatedAt: new Date(),
-      })
-      .where(eq(driverProfiles.userId, userId));
-    return { ok: true, userId, verificationStatus: body.verificationStatus };
+  async setDriverStatus(actorUserId: string, userId: string, body: AdminDriverStatusDto) {
+    return this.documents.setDriverReviewStatus(
+      actorUserId,
+      userId,
+      body.verificationStatus,
+      body.reason,
+    );
   }
 
   async listPricing() {
@@ -144,16 +151,49 @@ export class AdminService {
   }
 
   async upsertPricing(body: AdminPricingDto) {
+    const cityCode = body.cityCode?.trim() ? body.cityCode.trim() : null;
+    const optionKey = body.optionKey?.trim() ? body.optionKey.trim() : null;
+    const vehicleCategory = body.vehicleCategory ?? null;
+    const config = {
+      ...defaultTariffConfig,
+      ...parseTariffConfig({
+        moverFeeKopiyky: body.moverFeeKopiyky,
+        floorFeeKopiyky: body.floorFeeKopiyky,
+        noElevatorFeeKopiyky: body.noElevatorFeeKopiyky,
+        hourlyFeeKopiyky: body.hourlyFeeKopiyky,
+        waitingFeeKopiyky: body.waitingFeeKopiyky,
+        outsideCityPerKmKopiyky: body.outsideCityPerKmKopiyky,
+      }),
+    };
+
+    await this.db
+      .update(pricingRules)
+      .set({ active: false })
+      .where(
+        and(
+          eq(pricingRules.serviceKey, body.serviceKey),
+          cityCode ? eq(pricingRules.cityCode, cityCode) : isNull(pricingRules.cityCode),
+          vehicleCategory
+            ? eq(pricingRules.vehicleCategory, vehicleCategory)
+            : isNull(pricingRules.vehicleCategory),
+          optionKey ? eq(pricingRules.optionKey, optionKey) : isNull(pricingRules.optionKey),
+          eq(pricingRules.active, true),
+        ),
+      );
+
     const [created] = await this.db
       .insert(pricingRules)
       .values({
         serviceKey: body.serviceKey,
-        vehicleCategory: body.vehicleCategory ?? null,
+        cityCode,
+        vehicleCategory,
+        optionKey,
         baseFeeKopiyky: body.baseFeeKopiyky,
         perKmKopiyky: body.perKmKopiyky,
         minFeeKopiyky: body.minFeeKopiyky,
         nightMultiplierBps: body.nightMultiplierBps ?? 10_000,
         weekendMultiplierBps: body.weekendMultiplierBps ?? 10_000,
+        config,
         active: body.active ?? true,
       })
       .returning();

@@ -8,10 +8,10 @@ This MVP is **functionally complete without paid third-party services**. SMS, ma
 
 - Mobile: Expo SDK 57, Expo Router, TypeScript, `expo-dev-client`
 - API: NestJS, Drizzle ORM, PostgreSQL 16 + PostGIS
-- Auth: Ukrainian phone OTP (`+380` + 9 digits), JWT access + rotating refresh tokens (SecureStore on device)
+- Auth: choose client or driver first, then Ukrainian phone OTP (`+380` + 9 digits), JWT access + rotating refresh tokens (SecureStore on device)
 - Geo: `GeoProvider` (`dev` or free OSM/OSRM)
 - Notifications: `NotificationProvider` (`dev` logs + DB rows)
-- SMS: `SmsProvider` (`dev` returns OTP in the API response)
+- SMS: `SmsProvider` behind `AUTH_OTP_MODE` (`mock` in development, `sms` required in production)
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/API.md](docs/API.md).
 
@@ -34,13 +34,14 @@ cp .env.example .env
 | --- | --- | --- |
 | `DATABASE_URL` | Postgres | `postgresql://tow:tow@localhost:5433/tow_platform` |
 | `JWT_SECRET` | Access/refresh/OTP HMAC | ≥32 chars, local only |
-| `PORT` | API port | `3001` (must match `EXPO_PUBLIC_API_URL`) |
-| `SMS_PROVIDER` | OTP delivery | `dev` |
+| `PORT` | API port | `3001` (must match the mobile API URL) |
+| `AUTH_OTP_MODE` | OTP delivery | `mock` in development. Production **must** be `sms`. |
+| `SMS_PROVIDER` | Real SMS adapter | `dev` (blocked in production; no paid gateway in this MVP) |
 | `GEO_PROVIDER` | Geocode/route | `dev` (or `osm` for free Nominatim/OSRM) |
 | `NOTIFICATION_PROVIDER` | Outbound notices | `dev` |
 | `EXPO_PUBLIC_API_URL` | Mobile API base | Simulator: `http://127.0.0.1:3001`. Physical device: your Mac's LAN URL or a tunnel. Do not hardcode IPs in source. |
 
-`SMS_PROVIDER=dev` and `NOTIFICATION_PROVIDER=dev` are **blocked in production**.
+`AUTH_OTP_MODE=mock`, `SMS_PROVIDER=dev`, and `NOTIFICATION_PROVIDER=dev` are **blocked in production**. Production requires `AUTH_OTP_MODE=sms`.
 
 ## Database
 
@@ -74,7 +75,7 @@ npx expo start --dev-client --scheme towplatform
 
 Physical iPhone without USB/LAN Metro: `npm run start:tunnel`.
 
-Set `EXPO_PUBLIC_API_URL` to an address the phone can reach (not `localhost` on a physical device).
+On a physical iPhone, the app uses the Mac LAN IP from Metro (not `localhost` / `127.0.0.1`). Optional override: `EXPO_PUBLIC_API_URL=http://<Mac-LAN-IP>:3001`.
 
 ## iOS development build
 
@@ -91,7 +92,7 @@ Team ID: `X53JZ35W8H`. Bundle ID: `com.anonymous.tow-platform`.
 
 ## Test credentials (development seed)
 
-Dev OTP is returned as `devCode` from `POST /auth/otp/request` when `NODE_ENV` is not `production`.
+Dev OTP (`AUTH_OTP_MODE=mock`) is returned as `devCode` from `POST /auth/otp/request` and shown in the development UI. This is never enabled in production.
 
 | Phone | Role |
 | --- | --- |

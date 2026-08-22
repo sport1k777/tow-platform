@@ -1,16 +1,25 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { StyleSheet, View } from 'react-native';
 
 import { progressOrder } from '@/api/drivers';
 import { cancelOrder, fetchOrder, type OrderResponse } from '@/api/orders';
-import { copy } from '@/copy/uk';
+import { copy, serviceTitle } from '@/copy/uk';
 import { formatRouteSummary, formatUah } from '@/format/money';
 import { firstParam } from '@/navigation/params';
 import { driverCanCancelStatus, orderStatusLabel } from '@/orders/status';
 import { useSession } from '@/session';
-import { colors } from '@/theme';
+import { colors, space } from '@/theme';
+import {
+  AppText,
+  Button,
+  Card,
+  NavBack,
+  Screen,
+  StatusBadge,
+  orderStatusTone,
+  userFacingError,
+} from '@/ui';
 
 const NEXT_ACTION: Partial<
   Record<OrderResponse['status'], 'en-route' | 'arrive' | 'start' | 'complete'>
@@ -45,7 +54,7 @@ export default function DriverOrderScreen() {
       setOrder(next);
       setError(null);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : copy.requestError);
+      setError(userFacingError(caught));
     }
   }, [authed, orderId]);
 
@@ -79,7 +88,7 @@ export default function DriverOrderScreen() {
       setOrder(next);
       setError(null);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : copy.requestError);
+      setError(userFacingError(caught));
     } finally {
       setBusy(false);
     }
@@ -95,7 +104,7 @@ export default function DriverOrderScreen() {
       setOrder(next);
       setError(null);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : copy.requestError);
+      setError(userFacingError(caught));
     } finally {
       setBusy(false);
     }
@@ -104,115 +113,103 @@ export default function DriverOrderScreen() {
   const action = order ? NEXT_ACTION[order.status] : undefined;
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <View style={styles.container}>
-        <Text style={styles.brand}>{copy.appName}</Text>
-        <Text style={styles.title}>{copy.orderTitle}</Text>
-        <Text style={styles.subtitle}>
-          {order ? orderStatusLabel(order.status) : copy.loading}
-        </Text>
+    <Screen
+      scroll
+      footer={
+        <View style={styles.footer}>
+          {action ? (
+            <Button
+              label={ACTION_LABEL[action]}
+              loading={busy}
+              disabled={busy}
+              onPress={() => void onProgress()}
+            />
+          ) : null}
+          {order && driverCanCancelStatus(order.status) ? (
+            <Button
+              label={copy.cancelOrder}
+              variant="danger"
+              disabled={busy}
+              onPress={() => void onCancel()}
+            />
+          ) : null}
+          <Button
+            label={copy.backHome}
+            variant="secondary"
+            onPress={() => router.replace('/driver')}
+          />
+        </View>
+      }
+    >
+      <NavBack />
+      <AppText variant="hero">{copy.orderTitle}</AppText>
+      {order ? (
+        <AppText variant="body" color={colors.muted} style={styles.subtitle}>
+          {serviceTitle(order.serviceKey)}
+        </AppText>
+      ) : (
+        <AppText variant="body" color={colors.muted} style={styles.subtitle}>
+          {copy.loading}
+        </AppText>
+      )}
 
-        {order ? (
-          <View style={styles.card}>
-            <Text style={styles.meta}>
-              {copy.orderIdLabel}: {order.id.slice(0, 8)}
-            </Text>
-            <Text style={styles.price}>{formatUah(order.amountKopiyky)}</Text>
-            <Text style={styles.cardTitle}>
-              {formatRouteSummary(order.distanceMeters, order.durationSeconds)}
-            </Text>
-            <Text style={[styles.cardLabel, styles.spacer]}>{copy.pickupLabel}</Text>
-            <Text style={styles.cardTitle}>{order.pickup.label}</Text>
-            {order.destination ? (
-              <>
-                <Text style={[styles.cardLabel, styles.spacer]}>{copy.destinationLabel}</Text>
-                <Text style={styles.cardTitle}>{order.destination.label}</Text>
-              </>
-            ) : null}
+      {order ? (
+        <Card elevated style={styles.card}>
+          <StatusBadge
+            label={orderStatusLabel(order.status)}
+            tone={orderStatusTone(order.status)}
+          />
+          <AppText variant="caption" color={colors.muted}>
+            {copy.orderIdLabel}: {order.id.slice(0, 8)}
+          </AppText>
+          <AppText variant="hero" color={colors.accent}>
+            {formatUah(order.amountKopiyky)}
+          </AppText>
+          <AppText variant="card">
+            {formatRouteSummary(order.distanceMeters, order.durationSeconds)}
+          </AppText>
+          <View style={styles.block}>
+            <AppText variant="caption" color={colors.muted}>
+              {copy.pickupLabel}
+            </AppText>
+            <AppText variant="card">{order.pickup.label}</AppText>
           </View>
-        ) : null}
+          {order.destination ? (
+            <View style={styles.block}>
+              <AppText variant="caption" color={colors.muted}>
+                {copy.destinationLabel}
+              </AppText>
+              <AppText variant="card">{order.destination.label}</AppText>
+            </View>
+          ) : null}
+        </Card>
+      ) : null}
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-
-        {action ? (
-          <Pressable
-            accessibilityRole="button"
-            disabled={busy}
-            style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
-            onPress={() => void onProgress()}
-          >
-            <Text style={styles.primaryLabel}>
-              {busy ? copy.loading : ACTION_LABEL[action]}
-            </Text>
-          </Pressable>
-        ) : null}
-
-        {order && driverCanCancelStatus(order.status) ? (
-          <Pressable
-            accessibilityRole="button"
-            disabled={busy}
-            style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
-            onPress={() => void onCancel()}
-          >
-            <Text style={styles.secondaryLabel}>{copy.cancelOrder}</Text>
-          </Pressable>
-        ) : null}
-
-        <Pressable
-          accessibilityRole="button"
-          style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
-          onPress={() => router.replace('/driver')}
-        >
-          <Text style={styles.secondaryLabel}>{copy.backHome}</Text>
-        </Pressable>
-      </View>
-    </SafeAreaView>
+      {error ? (
+        <AppText variant="caption" color={colors.error} style={styles.error}>
+          {error}
+        </AppText>
+      ) : null}
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.background },
-  container: { flex: 1, paddingHorizontal: 20, paddingTop: 12 },
-  brand: {
-    color: colors.navy,
-    fontSize: 13,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    marginBottom: 8,
+  subtitle: {
+    marginTop: space.sm,
+    marginBottom: space.xl,
   },
-  title: { color: colors.text, fontSize: 28, fontWeight: '700', marginBottom: 8 },
-  subtitle: { color: colors.muted, fontSize: 16, marginBottom: 24 },
   card: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 16,
-    marginBottom: 16,
+    gap: space.md,
   },
-  cardLabel: { color: colors.muted, fontSize: 13, fontWeight: '600', marginBottom: 4 },
-  spacer: { marginTop: 12 },
-  cardTitle: { color: colors.text, fontSize: 16, fontWeight: '600' },
-  price: { color: colors.navy, fontSize: 28, fontWeight: '700', marginBottom: 4 },
-  meta: { color: colors.muted, marginBottom: 8 },
-  error: { color: colors.accent, marginBottom: 12 },
-  primaryButton: {
-    backgroundColor: colors.accent,
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginBottom: 12,
+  block: {
+    gap: 4,
   },
-  primaryLabel: { color: colors.surface, fontSize: 17, fontWeight: '700' },
-  secondaryButton: {
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginBottom: 12,
+  error: {
+    marginTop: space.md,
   },
-  secondaryLabel: { color: colors.navy, fontSize: 16, fontWeight: '600' },
-  pressed: { opacity: 0.85 },
+  footer: {
+    paddingHorizontal: space.xl,
+    gap: space.sm,
+  },
 });

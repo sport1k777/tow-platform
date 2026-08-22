@@ -113,6 +113,10 @@ describe('Orders (e2e)', () => {
     expect(created.body.currency).toBe('UAH');
     expect(created.body.pricingRuleId).toBeUndefined();
     expect(created.body.pickup.label).toBe(KYIV.label);
+    expect(created.body.pickupLatitude).toBe(KYIV.lat);
+    expect(created.body.pickupLongitude).toBe(KYIV.lng);
+    expect(created.body.pickupAddress).toBe(KYIV.label);
+    expect(created.body.pickupSource).toBe('manual_address');
     expect(created.body.destination.label).toBe(LVIV.label);
     expect(created.body.history).toEqual([
       expect.objectContaining({
@@ -148,6 +152,24 @@ describe('Orders (e2e)', () => {
     expect(orderRow.pickupLabel).toBe(quoteRow.pickupLabel);
     expect(orderRow.destinationLabel).toBe(quoteRow.destinationLabel);
     expect(created.body.amountKopiyky).toBe(quoteRow.amountKopiyky);
+  });
+
+  it('copies GPS pickup coordinates and source from the quote', async () => {
+    const quoted = await createQuote(customerToken, {
+      pickup: { ...KYIV, source: 'current_location' },
+    });
+    const created = await request(app.getHttpServer())
+      .post('/orders')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({ quoteId: quoted.body.id });
+
+    expect(quoted.status).toBe(201);
+    expect(created.status).toBe(201);
+    expect(created.body.pickupLatitude).toBe(KYIV.lat);
+    expect(created.body.pickupLongitude).toBe(KYIV.lng);
+    expect(created.body.pickupAddress).toBe(KYIV.label);
+    expect(created.body.pickupSource).toBe('current_location');
+    expect(created.body.pickup.source).toBe('current_location');
   });
 
   it('rejects quote reuse', async () => {

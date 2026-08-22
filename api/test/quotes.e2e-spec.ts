@@ -10,7 +10,7 @@ import { AppModule } from '../src/app.module';
 import { GlobalExceptionFilter } from '../src/common/http-exception.filter';
 import { loadEnv } from '../src/config/env';
 import { haversineMeters } from '../src/geo/dev-geo.provider';
-import { calculateAmountKopiyky } from '../src/pricing/pricing.engine';
+import { MockPricingProvider } from '../src/pricing/mock-pricing.provider';
 import { signHs256Jwt } from '../src/auth/jwt';
 import { DATABASE } from '../src/db/database.tokens';
 import type { Database } from '../src/db/database.module';
@@ -23,7 +23,9 @@ function uniqueUaPhone(): string {
 
 const KYIV = { lat: 50.447, lng: 30.522, label: 'Хрещатик, Київ' };
 const LVIV = { lat: 49.841, lng: 24.032, label: 'Площа Ринок, Львів' };
+const RIVNE = { lat: 50.6199, lng: 26.2516, label: 'вул. Соборна, Рівне' };
 const WARSAW = { lat: 52.23, lng: 21.01, label: 'Warsaw' };
+const pricing = new MockPricingProvider();
 
 describe('Quotes (e2e)', () => {
   let app: INestApplication<App>;
@@ -99,10 +101,15 @@ describe('Quotes (e2e)', () => {
       });
 
     const distanceMeters = Math.round(haversineMeters(KYIV, LVIV));
-    const expectedAmount = calculateAmountKopiyky(distanceMeters, {
-      baseFeeKopiyky: 50_000,
-      perKmKopiyky: 2_500,
-      minFeeKopiyky: 50_000,
+    const expected = await pricing.quote({
+      serviceKey: 'tow',
+      pickupLabel: KYIV.label,
+      pickup: KYIV,
+      destinationLabel: LVIV.label,
+      destination: LVIV,
+      distanceMeters,
+      vehicleCategory: 'car',
+      details: { towVehicle: 'car' },
     });
 
     expect(response.status).toBe(201);
@@ -110,10 +117,12 @@ describe('Quotes (e2e)', () => {
     expect(response.body.serviceKey).toBe('tow');
     expect(response.body.vehicleCategory).toBe('car');
     expect(response.body.distanceMeters).toBe(distanceMeters);
-    expect(response.body.amountKopiyky).toBe(expectedAmount);
+    expect(response.body.amountKopiyky).toBe(expected.breakdown.totalKopiyky);
     expect(response.body.currency).toBe('UAH');
     expect(response.body.pricingRuleId).toBeUndefined();
     expect(response.body.expiresAt).toBeDefined();
+    expect(response.body.breakdown.lines.length).toBeGreaterThan(1);
+    expect(response.body.breakdown.totalKopiyky).toBe(expected.breakdown.totalKopiyky);
   });
 
   it('rejects a client-supplied price', async () => {
@@ -142,20 +151,104 @@ describe('Quotes (e2e)', () => {
     expect(response.status).toBe(400);
   });
 
-  it('quotes roadside pickup-only at the seeded min fee', async () => {
+  it('quotes roadside pickup-only at the service-specific base', async () => {
     const response = await request(app.getHttpServer())
       .post('/quotes')
       .set('Authorization', `Bearer ${accessToken}`)
       .send({
         serviceKey: 'roadside',
         pickup: KYIV,
+        details: { roadsideProblem: 'battery' },
       });
 
     expect(response.status).toBe(201);
     expect(response.body.distanceMeters).toBe(0);
     expect(response.body.durationSeconds).toBe(0);
-    expect(response.body.amountKopiyky).toBe(40_000);
+    expect(response.body.amountKopiyky).toBe(50_000);
     expect(response.body.destination).toBeNull();
+    expect(response.body.pickupSource).toBe('manual_address');
+    expect(response.body.pickupLatitude).toBe(KYIV.lat);
+    expect(response.body.pickupLongitude).toBe(KYIV.lng);
+    expect(response.body.pickupAddress).toBe(KYIV.label);
+  });
+
+  it('stores GPS coordinates as the authoritative pickup location', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/quotes')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({
+        serviceKey: 'roadside',
+        pickup: { ...KYIV, source: 'current_location' },
+        details: { roadsideProblem: 'battery' },
+      });
+
+    expect(response.status).toBe(201);
+    expect(response.body.pickup.source).toBe('current_location');
+    expect(response.body.pickupSource).toBe('current_location');
+    expect(response.body.pickupLatitude).toBe(KYIV.lat);
+    expect(response.body.pickupLongitude).toBe(KYIV.lng);
+    expect(response.body.pickupAddress).toBe(KYIV.label);
+  });
+
+  it('accepts a GPS pickup without a street address', async () => {
+    const highway = {
+      lat: 51.12,
+      lng: 26.88,
+      label: 'GPS-локація без точної адреси',
+      source: 'map_pin',
+    };
+    const response = await request(app.getHttpServer())
+      .post('/quotes')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({
+        serviceKey: 'roadside',
+        pickup: highway,
+        details: { roadsideProblem: 'battery' },
+      });
+
+    expect(response.status).toBe(201);
+    expect(response.body.pickupLatitude).toBe(highway.lat);
+    expect(response.body.pickupLongitude).toBe(highway.lng);
+    expect(response.body.pickupAddress).toBe(highway.label);
+    expect(response.body.pickupSource).toBe('map_pin');
+    expect(response.body.pickup.lat).toBe(highway.lat);
+    expect(response.body.pickup.lng).toBe(highway.lng);
+  });
+
+  it('uses different city tariffs and service models', async () => {
+    const kyiv = await request(app.getHttpServer())
+      .post('/quotes')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({
+        serviceKey: 'roadside',
+        pickup: KYIV,
+        details: { roadsideProblem: 'battery' },
+      });
+    const rivne = await request(app.getHttpServer())
+      .post('/quotes')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({
+        serviceKey: 'roadside',
+        pickup: RIVNE,
+        details: { roadsideProblem: 'winch' },
+      });
+    const moving = await request(app.getHttpServer())
+      .post('/quotes')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({
+        serviceKey: 'moving',
+        pickup: KYIV,
+        destination: LVIV,
+        details: { movingVolume: 'medium', movers: true, moverCount: 2, lift: true, floor: 1 },
+      });
+
+    expect(kyiv.status).toBe(201);
+    expect(rivne.status).toBe(201);
+    expect(moving.status).toBe(201);
+    expect(kyiv.body.amountKopiyky).toBe(50_000);
+    expect(rivne.body.amountKopiyky).toBe(127_500);
+    expect(moving.body.amountKopiyky).not.toBe(kyiv.body.amountKopiyky);
+    expect(moving.body.serviceKey).toBe('moving');
   });
 
   it('rejects points outside Ukraine', async () => {
