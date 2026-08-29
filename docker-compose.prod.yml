@@ -1,0 +1,94 @@
+# VPS production stack: Expo web (nginx) + NestJS API + PostGIS.
+# Local development still uses docker-compose.yml (Postgres on 5433 only).
+#
+#   docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+#
+# The public site is published on host port 3000 (container nginx listens on 3000).
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-tow_platform}
+    volumes:
+      - tow_platform_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tow} -d ${POSTGRES_DB:-tow_platform}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - tow_internal
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-tow}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-tow_platform}
+      TRUST_PROXY: "true"
+    volumes:
+      - tow_platform_uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:'+(process.env.PORT||3001)+'/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 60s
+    networks:
+      - tow_internal
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        EXPO_PUBLIC_SITE_URL: ${EXPO_PUBLIC_SITE_URL:-}
+        EXPO_PUBLIC_APP_STORE_URL: ${EXPO_PUBLIC_APP_STORE_URL:-}
+        EXPO_PUBLIC_PLAY_STORE_URL: ${EXPO_PUBLIC_PLAY_STORE_URL:-}
+        EXPO_PUBLIC_IOS_APP_URL: ${EXPO_PUBLIC_IOS_APP_URL:-}
+        EXPO_PUBLIC_ANDROID_APP_URL: ${EXPO_PUBLIC_ANDROID_APP_URL:-}
+        EXPO_PUBLIC_SUPPORT_PHONE: ${EXPO_PUBLIC_SUPPORT_PHONE:-}
+        EXPO_PUBLIC_SUPPORT_WHATSAPP: ${EXPO_PUBLIC_SUPPORT_WHATSAPP:-}
+        EXPO_PUBLIC_SUPPORT_EMAIL: ${EXPO_PUBLIC_SUPPORT_EMAIL:-}
+        EXPO_PUBLIC_ANALYTICS: ${EXPO_PUBLIC_ANALYTICS:-}
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+    networks:
+      - tow_internal
+
+networks:
+  tow_internal:
+    driver: bridge
+
+volumes:
+  tow_platform_pgdata:
+  tow_platform_uploads:

@@ -1,0 +1,14 @@
+node_modules
+api/node_modules
+api/dist
+api/uploads
+.expo
+ios
+android
+.git
+dist
+uploads
+.env.docker
+api/.env
+.DS_Store
+*.tsbuildinfo
